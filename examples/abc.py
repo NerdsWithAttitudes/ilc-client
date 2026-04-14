@@ -12,7 +12,6 @@ from pathlib import Path
 import tinychain as tc
 
 from ilc import (
-    AuthContext,
     DEFAULT_CLIENT_WASM_PATH,
     DEFAULT_LOCAL_AUTHORITY,
     DEFAULT_SERVER_LIBRARY_ROOT,
@@ -23,8 +22,9 @@ from ilc import (
     ENV_TC_TOKEN_HOST,
     ILCClient,
     ILCServer,
-    build_local_kernel,
     evaluate_abc,
+    build_local_kernel,
+    wasm_install,
 )
 
 
@@ -124,13 +124,6 @@ def main() -> int:
         return 0
 
     runtime = _load_runtime_inputs(server)
-    auth = AuthContext.from_public_key_b64(
-        auth_token=runtime.bearer_token,
-        public_key_b64=runtime.public_key_b64,
-        auth_host=runtime.token_host,
-        infer_token_window=True,
-    )
-
     data_dir = Path(".ilc-local")
     data_dir.mkdir(parents=True, exist_ok=True)
     kernel = build_local_kernel(
@@ -140,7 +133,8 @@ def main() -> int:
         actor_id=runtime.actor_id,
         public_key_b64=runtime.public_key_b64,
     )
-    install = client.wasm_install(
+    install = wasm_install(
+        client,
         bearer_token=runtime.install_bearer_token,
         wasm_path=wasm_path,
         kernel=kernel,
@@ -155,7 +149,6 @@ def main() -> int:
     with tc.backend(kernel, bearer_token=runtime.bearer_token):
         abc = evaluate_abc(
             client=client,
-            auth=auth,
             a=args.a,
             b=args.b,
             c=args.c,

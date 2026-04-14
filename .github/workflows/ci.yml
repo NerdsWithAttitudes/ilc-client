@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+    - main
+    - ilc-server
+  workflow_dispatch:
+
+jobs:
+  contract:
+    name: Contract Tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Bootstrap and run tests
+      run: ./scripts/bootstrap_and_test.sh
+    - name: Dry-run example
+      run: ./.venv/bin/python examples/abc.py --dry-run --json
+
+  live_abc_smoke:
+    name: Live ABC Smoke
+    if: ${{ vars.ILC_ENABLE_LIVE_SMOKE == '1' }}
+    runs-on: ubuntu-latest
+    needs:
+    - contract
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+    - name: Preflight live smoke config
+      env:
+        ILC_ENABLE_LIVE_SMOKE: ${{ vars.ILC_ENABLE_LIVE_SMOKE }}
+        ILC_INTEGRATION_SERVER: ${{ vars.ILC_INTEGRATION_SERVER }}
+        ILC_CLIENT_WASM_B64: ${{ secrets.ILC_CLIENT_WASM_B64 }}
+        ILC_CLIENT_WASM_URL: ${{ secrets.ILC_CLIENT_WASM_URL }}
+        ILC_CLIENT_WASM_SHA256: ${{ vars.ILC_CLIENT_WASM_SHA256 }}
+        TC_BEARER_TOKEN: ${{ secrets.TC_BEARER_TOKEN }}
+        TC_INSTALL_BEARER_TOKEN: ${{ secrets.TC_INSTALL_BEARER_TOKEN }}
+        TC_PUBLIC_KEY_B64: ${{ secrets.TC_PUBLIC_KEY_B64 }}
+        TC_TOKEN_HOST: ${{ vars.TC_TOKEN_HOST }}
+        TC_ACTOR_ID: ${{ vars.TC_ACTOR_ID }}
+      run: ./scripts/ci_preflight.sh
+    - name: Run live integration smoke
+      env:
+        ILC_INTEGRATION_SERVER: ${{ vars.ILC_INTEGRATION_SERVER }}
+        ILC_WASM_PATH: artifacts/cipher_wasm.wasm
+        ILC_CLIENT_WASM_B64: ${{ secrets.ILC_CLIENT_WASM_B64 }}
+        ILC_CLIENT_WASM_URL: ${{ secrets.ILC_CLIENT_WASM_URL }}
+        ILC_CLIENT_WASM_SHA256: ${{ vars.ILC_CLIENT_WASM_SHA256 }}
+        TC_BEARER_TOKEN: ${{ secrets.TC_BEARER_TOKEN }}
+        TC_INSTALL_BEARER_TOKEN: ${{ secrets.TC_INSTALL_BEARER_TOKEN }}
+        TC_PUBLIC_KEY_B64: ${{ secrets.TC_PUBLIC_KEY_B64 }}
+        TC_TOKEN_HOST: ${{ vars.TC_TOKEN_HOST }}
+        TC_ACTOR_ID: ${{ vars.TC_ACTOR_ID }}
+      run: ./scripts/ci_live_smoke.sh

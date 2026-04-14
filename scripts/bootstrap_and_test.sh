@@ -16,8 +16,11 @@ VENV_DIR="${VENV_DIR:-.venv}"
 # Install this package in editable mode.
 "$VENV_DIR/bin/pip" install -e .
 
+# Test runner used by this repo.
+"$VENV_DIR/bin/pip" install pytest
+
 # Contract tests that do not require the public server to be live.
-"$VENV_DIR/bin/python" -m unittest discover -s tests -p "test_*.py"
+"$VENV_DIR/bin/python" -m pytest -q
 
 cat <<MSG
 

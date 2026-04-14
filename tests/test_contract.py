@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 from ilc import (
     AbcEvaluation,
-    AuthContext,
     DEFAULT_CLIENT_LIBRARY_ROOT,
     DEFAULT_CLIENT_WASM_PATH,
     DEFAULT_LOCAL_AUTHORITY,
@@ -19,12 +18,15 @@ from ilc import (
     ILCClient,
     ILCServer,
     evaluate_abc,
-    public_key_hex_from_b64,
-    token_validity_window,
+    wasm_install,
 )
 
 
 class ContractTests(unittest.TestCase):
+    @staticmethod
+    def _repo_root() -> Path:
+        return Path(__file__).resolve().parents[1]
+
     def test_default_library_contracts(self) -> None:
         client = ILCClient()
         server = ILCServer()
@@ -60,7 +62,8 @@ class ContractTests(unittest.TestCase):
         client = ILCClient()
 
         with self.assertRaises(FileNotFoundError):
-            client.wasm_install(
+            wasm_install(
+                client,
                 bearer_token="stub-token",
                 wasm_path=Path("artifacts/does-not-exist.wasm"),
             )
@@ -85,57 +88,63 @@ class ContractTests(unittest.TestCase):
         )
         self.assertEqual(payload["wasm_path"], str(DEFAULT_CLIENT_WASM_PATH))
 
-    def test_public_key_hex_from_b64(self) -> None:
-        key_b64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-        key_hex = public_key_hex_from_b64(key_b64)
-        self.assertEqual(len(key_hex), 64)
-
-    def test_auth_context_from_public_key_b64(self) -> None:
-        key_b64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-        ctx = AuthContext.from_public_key_b64(
-            auth_token="eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJpYXQiOjEsImV4cCI6M30.sig",
-            public_key_b64=key_b64,
-            auth_host=DEFAULT_SERVER_LIBRARY_ROOT,
-            infer_token_window=True,
-        )
-        kwargs = ctx.op_kwargs()
-        self.assertEqual(kwargs["auth_host"], DEFAULT_SERVER_LIBRARY_ROOT)
-        self.assertEqual(len(kwargs["auth_public_key_hex"]), 64)
-        self.assertEqual(kwargs["txn_timestamp_min"], 1_000_000_000)
-        self.assertEqual(kwargs["txn_timestamp_max"], 3_000_000_000)
-
-    def test_token_validity_window(self) -> None:
-        header = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0"  # {"alg":"none","typ":"JWT"}
-        payload = "eyJpYXQiOjEsImV4cCI6M30"  # {"iat":1,"exp":3}
-        token = f"{header}.{payload}.sig"
-        self.assertEqual(token_validity_window(token), (1_000_000_000, 3_000_000_000))
-
-    def test_sub_scalars_uses_add_route_with_negated_rhs(self) -> None:
+    def test_add_op_accepts_negated_rhs_for_subtraction_flow(self) -> None:
         client = ILCClient()
-        auth = AuthContext(
-            auth_token="stub",
-            auth_public_key_hex="0" * 64,
-            auth_host=DEFAULT_SERVER_LIBRARY_ROOT,
-        )
-        op = client.sub_scalars(a=10.0, b=3.0, auth=auth)
+        op = client.add_op(metric=[3, 5], lhs=[10.0, 0.0], rhs=[-3.0, 0.0])
         self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/add")
         self.assertEqual(op.body["rhs"], [-3.0, 0.0])
 
+    def test_gemm_op_route_shape_and_params(self) -> None:
+        client = ILCClient()
+        op = client.gemm_op(
+            metric=[3, 5],
+            lhs=[1.0, 2.0, 3.0, 4.0],
+            rhs=[5.0, 6.0, 7.0, 8.0],
+            lhs_rows=2,
+            lhs_cols=2,
+            rhs_cols=2,
+        )
+        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/gemm")
+        self.assertEqual(op.body["lhs_rows"], 2)
+        self.assertEqual(op.body["lhs_cols"], 2)
+        self.assertEqual(op.body["rhs_cols"], 2)
+
     def test_evaluate_abc_returns_expected_result(self) -> None:
         client = ILCClient()
-        auth = AuthContext(
-            auth_token="stub",
-            auth_public_key_hex="0" * 64,
-            auth_host=DEFAULT_SERVER_LIBRARY_ROOT,
-        )
-
-        with patch("ilc.example_ops.tc.execute", side_effect=[{"result": [12.0, 0.0]}, {"result": [9.0, 0.0]}]):
-            result = evaluate_abc(client=client, auth=auth, a=7, b=5, c=3)
+        with patch.object(
+            ILCClient,
+            "add",
+            side_effect=[{"result": [12.0, 0.0]}, {"result": [9.0, 0.0]}],
+        ):
+            result = evaluate_abc(client=client, a=7, b=5, c=3)
 
         self.assertIsInstance(result, AbcEvaluation)
         self.assertEqual(result.recovered, 9)
         self.assertEqual(result.expected, 9)
         self.assertTrue(result.ok)
+
+    def test_no_authcontext_export(self) -> None:
+        import ilc
+        self.assertFalse(hasattr(ilc, "AuthContext"))
+
+    def test_no_bind_auth_api(self) -> None:
+        self.assertFalse(hasattr(ILCClient, "bind_auth"))
+
+    def test_no_legacy_http_transport_shim(self) -> None:
+        root = self._repo_root()
+        src_files = sorted((root / "src").rglob("*.py"))
+        self.assertTrue(src_files, "expected Python source files under src/")
+
+        combined = "\n".join(p.read_text(encoding="utf-8") for p in src_files)
+        self.assertNotIn("post_json", combined)
+        self.assertNotIn("urllib.request", combined)
+        self.assertNotIn("urlopen(", combined)
+
+    def test_no_framework_gap_todo_wording(self) -> None:
+        root = self._repo_root()
+        files = [*sorted((root / "src").rglob("*.py")), root / "README.md"]
+        combined = "\n".join(p.read_text(encoding="utf-8") for p in files)
+        self.assertNotIn("TODO(framework-gap)", combined)
 
 
 if __name__ == "__main__":

@@ -45,6 +45,8 @@ if [[ ! -x "$VENV_DIR/bin/python" ]]; then
   "$VENV_DIR/bin/pip" install -e .
 fi
 
+./scripts/install_tinychain_local.sh
+
 if [[ ! -f "$WASM_PATH" ]]; then
   echo "error: WASM path not found: $WASM_PATH" >&2
   echo "hint: set ILC_WASM_PATH or place artifact at artifacts/cipher_wasm.wasm" >&2

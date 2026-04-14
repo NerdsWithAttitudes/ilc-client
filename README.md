@@ -1,22 +1,43 @@
 # ilc
 
-Public Python integration package for Infinite Lattice Cryptography (ILC).
+Python integration package for Infinite Lattice Cryptography (ILC).
+
+## Service and data-use disclaimer
+
+- The public ILC Server currently has no service-level agreement (SLA).
+- The ILC Server and this `ilc` client package are under active development.
+  Interfaces and behavior may change, regress, or break without prior notice.
+- Do not upload sensitive data to the ILC Server, including personally
+  identifiable information (PII), protected health information (PHI), financial
+  account data, regulated data, or confidential production data.
 
 ## Scope
 
-This repository provides client-facing Python wrappers only:
+This repository provides Python integration wrappers only:
 - remote server calls for authenticated `encrypt` and `decrypt`
 - local WASM calls for evaluator-side `add`, `mul`, and `gemm`
-- one source-visible demonstration script: `a + b - c`
+- one reference demonstration script: `a + b - c`
 
-It does not contain proprietary Rust implementation internals.
+This repository does not contain proprietary implementation internals.
 
-## Reviewer map
+`ILCClient` is ciphertext-domain only. Its evaluator methods operate on
+ciphertext payloads and do not expose separate exact-vs-approx client classes.
+
+## Package map
 
 - Server route wrapper: `ILCServer` in `src/ilc/library.py`
 - Client route wrapper: `ILCClient` in `src/ilc/library.py`
-- Auth/session wrapper: `AuthContext` and `ILCServerSession` in `src/ilc/library.py`
-- Demonstration script: [examples/abc.py](examples/abc.py)
+- Runtime helpers: `build_local_kernel` and `wasm_install` in `src/ilc/runtime.py`
+- Transport/auth execution: TinyChain built-ins (`tc.execute`, `tc.backend`,
+  bearer-token flow in TinyChain client runtime)
+- Demonstration script: [`examples/abc.py`](examples/abc.py)
+
+## API surface
+
+- Ciphertext evaluator ops: `add`, `mul`, `gemm`
+- Route calls auto-execute inside an active backend scope.
+- Use `deferred=True` when you need an `OpRef` and want explicit `tc.execute(...)`.
+- The `a + b - c` script is a demonstration wrapper over these ciphertext ops.
 
 ## Default configuration constants
 
@@ -38,24 +59,24 @@ These are exposed from `ilc.config` and can be overridden.
 
 The public client request contract does not include any `blind` parameter.
 
-## Install (editable)
+## Installation
 
 ```bash
 pip install "tinychain @ git+https://github.com/TinyChain-Inc/client.git#subdirectory=py"
 pip install -e .
 ```
 
-## Reproducible procedure
+## Reproducible run (`a + b - c`)
 
 ```bash
-# 1) Install dependencies
+# 1) Install dependencies (editable)
 pip install "tinychain @ git+https://github.com/TinyChain-Inc/client.git#subdirectory=py"
 pip install -e .
 
 # 2) Generate a local keypair (public key only is shared)
 ./scripts/generate_keypair.sh
 
-# 3) Request token from admin:
+# 3) Request token from service administrator:
 #    email ilc-admin@appliedphysics.org with:
 #    - actor id (e.g. your-group/your-user)
 #    - contents of .secrets/ilc_public_key.b64
@@ -70,7 +91,7 @@ export TC_INSTALL_BEARER_TOKEN="$TC_BEARER_TOKEN"
 export TC_ACTOR_ID="your-group/your-user"
 export TC_TOKEN_HOST="/lib/applied-physics/ilc/0.1.0"
 
-# 5) Verify configuration only
+# 5) Verify configuration
 python examples/abc.py --dry-run
 
 # 6) Run the demonstration (requires prebuilt client WASM)
@@ -81,12 +102,22 @@ python examples/abc.py \
 
 ```
 
-Use `--json` for machine-readable output.
+Use `--json` for machine-readable output in automation.
 
-## Local validation helpers
+## TinyChain execution model
 
-```bash
-./scripts/bootstrap_and_test.sh
-ILC_INTEGRATION_SERVER=http://127.0.0.1:8700 ./scripts/integration_smoke.sh
-./scripts/run_abc_quickstart.sh
-```
+- Normal mode: wrap execution with `with tc.backend(kernel, bearer_token=...):`
+  and call route methods directly.
+- Deferred mode: request `deferred=True` on route calls and then use
+  `tc.execute(opref)` explicitly.
+- No package-local HTTP transport wrappers or custom response-envelope parsers
+  are used.
+- Client operation payloads in this package include only domain inputs.
+- Active framework-gap candidates (if any) are tracked in `FRAMEWORK_GAPS.md`.
+
+## Maintenance
+
+Development workflow and validation commands are in `DEVELOPMENT.md`.
+CI configuration (including optional live integration checks against a deployed server) is also
+documented there.
+Contribution guidelines are in `CONTRIBUTING.md`.
