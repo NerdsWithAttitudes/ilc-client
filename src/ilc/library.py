@@ -103,39 +103,6 @@ class ILCClient(Library):
     def _get(self, path: str, body: dict[str, Any]) -> tc.OpRef:
         return tc.OpRef("GET", f"{self.route_root}{path}", body=body)
 
-    @tc.get(name="add")
-    def route_add(
-        self,
-        *,
-        metric: Metric,
-        lhs: Ciphertext,
-        rhs: Ciphertext,
-    ) -> Any:
-        ...
-
-    @tc.get(name="mul")
-    def route_mul(
-        self,
-        *,
-        metric: Metric,
-        lhs: Ciphertext,
-        rhs: Ciphertext,
-    ) -> Any:
-        ...
-
-    @tc.get(name="gemm")
-    def route_gemm(
-        self,
-        *,
-        metric: Metric,
-        lhs: Ciphertext,
-        rhs: Ciphertext,
-        lhs_rows: int,
-        lhs_cols: int,
-        rhs_cols: int,
-    ) -> Any:
-        ...
-
     @staticmethod
     def _execute_or_defer(op_or_value: Any, *, deferred: bool) -> Any:
         op = None
