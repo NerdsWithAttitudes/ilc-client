@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, TypeAlias
 
 import tinychain as tc
+from tinychain.executor import try_current
 from tinychain.library import Library
 from tinychain.uri import URI
 
@@ -104,22 +105,23 @@ class ILCClient(Library):
         return tc.OpRef("GET", f"{self.route_root}{path}", body=body)
 
     @staticmethod
-    def _execute_or_defer(op_or_value: Any, *, deferred: bool) -> Any:
-        op = None
-        if isinstance(op_or_value, tc.OpRef):
-            op = op_or_value
-
-        if op is not None and isinstance(op.path, str) and op.path.startswith("http"):
+    def _dispatch(op: tc.OpRef) -> CiphertextResponse | tc.OpRef:
+        if isinstance(op.path, str) and op.path.startswith("http"):
             uri = URI.parse(op.path)
             op = tc.OpRef(op.method, uri.path, op.headers, op.body)
 
-        if deferred:
-            return op if op is not None else op_or_value
+        executor = try_current()
+        if executor is not None:
+            should_auto = getattr(executor, "should_auto_execute", None)
+            if callable(should_auto):
+                auto = bool(should_auto())
+            else:
+                auto = bool(getattr(executor, "auto_execute", True))
 
-        if op is not None:
-            return tc.execute(op)
+            if not auto:
+                return op
 
-        return op_or_value
+        return tc.execute(op)
 
     def add(
         self,
@@ -127,10 +129,9 @@ class ILCClient(Library):
         metric: Metric,
         lhs: Ciphertext,
         rhs: Ciphertext,
-        deferred: bool = False,
     ) -> CiphertextResponse | tc.OpRef:
         op = self._get("/add", {"metric": metric, "lhs": lhs, "rhs": rhs})
-        return self._execute_or_defer(op, deferred=deferred)
+        return self._dispatch(op)
 
     def mul(
         self,
@@ -138,10 +139,9 @@ class ILCClient(Library):
         metric: Metric,
         lhs: Ciphertext,
         rhs: Ciphertext,
-        deferred: bool = False,
     ) -> CiphertextResponse | tc.OpRef:
         op = self._get("/mul", {"metric": metric, "lhs": lhs, "rhs": rhs})
-        return self._execute_or_defer(op, deferred=deferred)
+        return self._dispatch(op)
 
     def gemm(
         self,
@@ -152,7 +152,6 @@ class ILCClient(Library):
         lhs_rows: int,
         lhs_cols: int,
         rhs_cols: int,
-        deferred: bool = False,
     ) -> CiphertextResponse | tc.OpRef:
         op = self._get(
             "/gemm",
@@ -165,42 +164,4 @@ class ILCClient(Library):
                 "rhs_cols": int(rhs_cols),
             },
         )
-        return self._execute_or_defer(op, deferred=deferred)
-
-    def add_op(
-        self,
-        *,
-        metric: Metric,
-        lhs: Ciphertext,
-        rhs: Ciphertext,
-    ) -> tc.OpRef:
-        return self.add(metric=metric, lhs=lhs, rhs=rhs, deferred=True)
-
-    def mul_op(
-        self,
-        *,
-        metric: Metric,
-        lhs: Ciphertext,
-        rhs: Ciphertext,
-    ) -> tc.OpRef:
-        return self.mul(metric=metric, lhs=lhs, rhs=rhs, deferred=True)
-
-    def gemm_op(
-        self,
-        *,
-        metric: Metric,
-        lhs: Ciphertext,
-        rhs: Ciphertext,
-        lhs_rows: int,
-        lhs_cols: int,
-        rhs_cols: int,
-    ) -> tc.OpRef:
-        return self.gemm(
-            metric=metric,
-            lhs=lhs,
-            rhs=rhs,
-            lhs_rows=lhs_rows,
-            lhs_cols=lhs_cols,
-            rhs_cols=rhs_cols,
-            deferred=True,
-        )
+        return self._dispatch(op)

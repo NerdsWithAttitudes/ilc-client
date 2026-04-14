@@ -36,7 +36,8 @@ ciphertext payloads and do not expose separate exact-vs-approx client classes.
 
 - Ciphertext evaluator ops: `add`, `mul`, `gemm`
 - Route calls auto-execute inside an active backend scope.
-- Use `deferred=True` when you need an `OpRef` and want explicit `tc.execute(...)`.
+- Use `with tc.backend(..., auto_execute=False)` (or `mode="deferred"` on
+  newer TinyChain versions) when you want `OpRef` planning.
 - The `a + b - c` script is a demonstration wrapper over these ciphertext ops.
 
 ## Default configuration constants
@@ -108,8 +109,8 @@ Use `--json` for machine-readable output in automation.
 
 - Normal mode: wrap execution with `with tc.backend(kernel, bearer_token=...):`
   and call route methods directly.
-- Deferred mode: request `deferred=True` on route calls and then use
-  `tc.execute(opref)` explicitly.
+- Deferred mode: use `with tc.backend(..., auto_execute=False)` (or
+  `mode="deferred"` where available), then call `tc.execute(opref)` explicitly.
 - No package-local HTTP transport wrappers or custom response-envelope parsers
   are used.
 - Client operation payloads in this package include only domain inputs.

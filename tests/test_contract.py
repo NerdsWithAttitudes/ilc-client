@@ -7,6 +7,8 @@ import sys
 import json
 from unittest.mock import patch
 
+import tinychain as tc
+
 from ilc import (
     AbcEvaluation,
     DEFAULT_CLIENT_LIBRARY_ROOT,
@@ -88,22 +90,24 @@ class ContractTests(unittest.TestCase):
         )
         self.assertEqual(payload["wasm_path"], str(DEFAULT_CLIENT_WASM_PATH))
 
-    def test_add_op_accepts_negated_rhs_for_subtraction_flow(self) -> None:
+    def test_deferred_add_accepts_negated_rhs_for_subtraction_flow(self) -> None:
         client = ILCClient()
-        op = client.add_op(metric=[3, 5], lhs=[10.0, 0.0], rhs=[-3.0, 0.0])
+        with tc.backend(auto_execute=False):
+            op = client.add(metric=[3, 5], lhs=[10.0, 0.0], rhs=[-3.0, 0.0])
         self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/add")
         self.assertEqual(op.body["rhs"], [-3.0, 0.0])
 
-    def test_gemm_op_route_shape_and_params(self) -> None:
+    def test_deferred_gemm_route_shape_and_params(self) -> None:
         client = ILCClient()
-        op = client.gemm_op(
-            metric=[3, 5],
-            lhs=[1.0, 2.0, 3.0, 4.0],
-            rhs=[5.0, 6.0, 7.0, 8.0],
-            lhs_rows=2,
-            lhs_cols=2,
-            rhs_cols=2,
-        )
+        with tc.backend(auto_execute=False):
+            op = client.gemm(
+                metric=[3, 5],
+                lhs=[1.0, 2.0, 3.0, 4.0],
+                rhs=[5.0, 6.0, 7.0, 8.0],
+                lhs_rows=2,
+                lhs_cols=2,
+                rhs_cols=2,
+            )
         self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/gemm")
         self.assertEqual(op.body["lhs_rows"], 2)
         self.assertEqual(op.body["lhs_cols"], 2)
