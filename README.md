@@ -122,3 +122,4 @@ Development workflow and validation commands are in `DEVELOPMENT.md`.
 CI configuration (including optional live integration checks against a deployed server) is also
 documented there.
 Contribution guidelines are in `CONTRIBUTING.md`.
+Planned future work is tracked in `ROADMAP.md`.
