@@ -1,0 +1,25 @@
+name: Live Smoke Preflight
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Validate live smoke configuration
+      env:
+        ILC_ENABLE_LIVE_SMOKE: ${{ vars.ILC_ENABLE_LIVE_SMOKE }}
+        ILC_INTEGRATION_SERVER: ${{ vars.ILC_INTEGRATION_SERVER }}
+        ILC_CLIENT_WASM_B64: ${{ secrets.ILC_CLIENT_WASM_B64 }}
+        ILC_CLIENT_WASM_URL: ${{ secrets.ILC_CLIENT_WASM_URL }}
+        ILC_CLIENT_WASM_SHA256: ${{ vars.ILC_CLIENT_WASM_SHA256 }}
+        TC_BEARER_TOKEN: ${{ secrets.TC_BEARER_TOKEN }}
+        TC_INSTALL_BEARER_TOKEN: ${{ secrets.TC_INSTALL_BEARER_TOKEN }}
+        TC_PUBLIC_KEY_B64: ${{ secrets.TC_PUBLIC_KEY_B64 }}
+        TC_TOKEN_HOST: ${{ vars.TC_TOKEN_HOST }}
+        TC_ACTOR_ID: ${{ vars.TC_ACTOR_ID }}
+      run: ./scripts/ci_preflight.sh
