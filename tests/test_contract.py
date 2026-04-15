@@ -8,9 +8,11 @@ import json
 from unittest.mock import patch
 
 import tinychain as tc
+from tinychain.uri import URI
 
 from ilc import (
     AbcEvaluation,
+    CipherContext,
     DEFAULT_CLIENT_LIBRARY_ROOT,
     DEFAULT_CLIENT_WASM_PATH,
     DEFAULT_LOCAL_AUTHORITY,
@@ -48,8 +50,8 @@ class ContractTests(unittest.TestCase):
         )
 
     def test_authority_override(self) -> None:
-        client = ILCClient.with_authority("http://127.0.0.1:4100")
-        server = ILCServer.with_authority("https://example.test")
+        client = ILCClient(authority=URI.parse("http://127.0.0.1:4100"))
+        server = ILCServer(authority=URI.parse("https://example.test"))
 
         self.assertEqual(
             str(client.link()),
@@ -96,6 +98,7 @@ class ContractTests(unittest.TestCase):
             op = client.add(metric=[3, 5], lhs=[10.0, 0.0], rhs=[-3.0, 0.0])
         self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/add")
         self.assertEqual(op.body["rhs"], [-3.0, 0.0])
+        self.assertNotIn("context", op.body)
 
     def test_deferred_gemm_route_shape_and_params(self) -> None:
         client = ILCClient()
@@ -112,16 +115,82 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(op.body["lhs_rows"], 2)
         self.assertEqual(op.body["lhs_cols"], 2)
         self.assertEqual(op.body["rhs_cols"], 2)
+        self.assertNotIn("context", op.body)
+
+    def test_server_encrypt_includes_explicit_context(self) -> None:
+        server = ILCServer()
+        context: CipherContext = {
+            "version": 1,
+            "alg": "HS256",
+            "kid": None,
+            "payload_b64": "payload",
+            "signature_b64": "signature",
+        }
+        op = server.encrypt(
+            context=context,
+            payload=[1, 2, 3],
+            budget_log2=20,
+        )
+        self.assertEqual(op.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/encrypt")
+        self.assertEqual(op.body["context"]["alg"], "HS256")
+        self.assertEqual(op.body["payload"], [1, 2, 3])
+
+    def test_secret_routes_require_context_while_eval_routes_do_not(self) -> None:
+        server = ILCServer()
+        client = ILCClient()
+        context: CipherContext = {
+            "version": 1,
+            "alg": "HS256",
+            "kid": "review",
+            "payload_b64": "payload",
+            "signature_b64": "signature",
+        }
+
+        encrypt_op = server.encrypt(context=context, payload=[7, 0], budget_log2=20)
+        self.assertIn("context", encrypt_op.body)
+        self.assertEqual(encrypt_op.body["context"]["kid"], "review")
+
+        with tc.backend(auto_execute=False):
+            eval_op = client.add(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
+        self.assertNotIn("context", eval_op.body)
+
+    def test_setup_response_context_can_be_passed_directly_to_encrypt(self) -> None:
+        server = ILCServer()
+        setup_response = {
+            "public": {"cipher_metric": [1, 2]},
+            "context": {
+                "version": 1,
+                "alg": "HS256",
+                "kid": None,
+                "payload_b64": "payload",
+                "signature_b64": "signature",
+            },
+        }
+        context: CipherContext = setup_response["context"]
+        op = server.encrypt(context=context, payload=[9, 0], budget_log2=20)
+        self.assertEqual(setup_response["public"]["cipher_metric"], [1, 2])
+        self.assertEqual(op.body["context"]["alg"], "HS256")
+
+    def test_no_handle_classes_exported(self) -> None:
+        import ilc
+
+        self.assertFalse(hasattr(ilc, "SecretCryptoHandle"))
+        self.assertFalse(hasattr(ilc, "PublicEvalHandle"))
 
     def test_evaluate_abc_returns_expected_result(self) -> None:
         client = ILCClient()
         with patch.object(
             ILCClient,
             "add",
+            side_effect=["op-add-ab", "op-add-neg-c"],
+        ), patch.object(
+            tc,
+            "execute",
             side_effect=[{"result": [12.0, 0.0]}, {"result": [9.0, 0.0]}],
-        ):
+        ) as execute_mock:
             result = evaluate_abc(client=client, a=7, b=5, c=3)
 
+        self.assertEqual(execute_mock.call_count, 2)
         self.assertIsInstance(result, AbcEvaluation)
         self.assertEqual(result.recovered, 9)
         self.assertEqual(result.expected, 9)

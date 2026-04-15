@@ -35,10 +35,90 @@ ciphertext payloads and do not expose separate exact-vs-approx client classes.
 ## API surface
 
 - Ciphertext evaluator ops: `add`, `mul`, `gemm`
-- Route calls auto-execute inside an active backend scope.
-- Use `with tc.backend(..., auto_execute=False)` (or `mode="deferred"` on
-  newer TinyChain versions) when you want `OpRef` planning.
+- Route methods return `OpRef`; execute with `tc.execute(op)` inside
+  `with tc.backend(...):`.
 - The `a + b - c` script is a demonstration wrapper over these ciphertext ops.
+
+### Reviewer-Facing Capability Split
+
+The public API keeps one server wrapper and one client wrapper:
+
+- `ILCServer`: `setup`, `encrypt`, `decrypt`
+- `ILCClient`: `add`, `mul`, `gemm`
+
+`ILCServer.encrypt/decrypt` require structured `CipherContext`. `ILCClient`
+evaluator ops do not accept or require `CipherContext`.
+
+### Operation Dependency Matrix
+
+- `setup`: requires `secret_metric`
+- `encrypt`: requires `CipherContext` (derived from setup with `secret_metric`)
+- `decrypt`: requires `CipherContext` (derived from setup with `secret_metric`)
+- `add`: does not require `CipherContext` or `secret_metric`
+- `mul`: does not require `CipherContext` or `secret_metric`
+- `gemm`: does not require `CipherContext` or `secret_metric`
+
+### Reviewer Walkthrough
+
+```python
+import tinychain as tc
+from ilc import ILCServer, ILCClient
+
+server = ILCServer()
+client = ILCClient()
+
+# 1) Setup (secret-side)
+setup_op = server.setup(
+    params={"moduli": [65521, 65537, 65543], "params_id": [9] * 16},
+    secret_metric=[3, 5, 7, 11],
+    payload_dims=2,
+    nonce_dims=2,
+    nonce_bound=16,
+)
+# In a real run, execute setup_op with tinychain:
+# setup_response = tc.execute(setup_op)
+# context = setup_response["context"]
+# public = setup_response["public"]
+# (framework already decodes the response body into Python values)
+setup_response = {
+    "public": {"cipher_metric": [0, 0, 0, 0]},
+    "context": {
+        "version": 1,
+        "alg": "HS256",
+        "kid": "review",
+        "payload_b64": "...",
+        "signature_b64": "...",
+    },
+}
+context = setup_response["context"]
+public = setup_response["public"]
+
+# 2) Secret-only operations (explicit context dependency)
+ct_op = server.encrypt(
+    context=context,
+    payload=[7, 5],
+    budget_log2=20,
+)
+pt_op = server.decrypt(
+    context=context,
+    ciphertext={"limbs": [[0, 1]], "key_id": [0] * 16, "params_id": [9] * 16, "budget_log2": 20, "max_budget_log2": 20},
+)
+
+# 3) Public evaluator operations (no CipherContext argument)
+sum_op = client.add(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
+prod_op = client.mul(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
+gemm_op = client.gemm(
+    metric=[3, 5],
+    lhs=[1.0, 2.0, 3.0, 4.0],
+    rhs=[5.0, 6.0, 7.0, 8.0],
+    lhs_rows=2,
+    lhs_cols=2,
+    rhs_cols=2,
+)
+
+# Execute with TinyChain when running in backend scope.
+sum_result = tc.execute(sum_op)
+```
 
 ## Default configuration constants
 

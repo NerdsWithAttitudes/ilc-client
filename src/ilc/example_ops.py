@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+import tinychain as tc
+
 from .config import DEFAULT_COMPUTE
 from .library import ILCClient
 
@@ -38,15 +40,19 @@ def evaluate_abc(
     c: int,
 ) -> AbcEvaluation:
     metric = list(DEFAULT_COMPUTE.metric)
-    add_ab = client.add(
-        metric=metric,
-        lhs=[float(a), 0.0],
-        rhs=[float(b), 0.0],
+    add_ab = tc.execute(
+        client.add(
+            metric=metric,
+            lhs=[float(a), 0.0],
+            rhs=[float(b), 0.0],
+        )
     )
-    add_neg_c = client.add(
-        metric=metric,
-        lhs=[_first_result_component(add_ab), 0.0],
-        rhs=[-float(c), 0.0],
+    add_neg_c = tc.execute(
+        client.add(
+            metric=metric,
+            lhs=[_first_result_component(add_ab), 0.0],
+            rhs=[-float(c), 0.0],
+        )
     )
 
     recovered = int(round(_first_result_component(add_neg_c)))

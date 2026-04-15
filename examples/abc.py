@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tinychain as tc
+from tinychain.uri import URI
 
 from ilc import (
     DEFAULT_CLIENT_WASM_PATH,
@@ -99,7 +100,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    server = ILCServer.with_authority(args.server) if args.server else ILCServer()
+    server = ILCServer(authority=URI.parse(args.server)) if args.server else ILCServer()
     client = ILCClient()
     wasm_path = Path(args.wasm_path)
 

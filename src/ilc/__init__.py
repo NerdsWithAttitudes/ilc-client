@@ -21,7 +21,11 @@ from .config import (
     server_library_root,
 )
 from .example_ops import AbcEvaluation, evaluate_abc
-from .library import ILCClient, ILCServer
+from .library import (
+    CipherContext,
+    ILCClient,
+    ILCServer,
+)
 from .runtime import build_local_kernel, wasm_install
 
 __all__ = [
@@ -46,6 +50,7 @@ __all__ = [
     "client_library_root",
     "server_library_root",
     "AbcEvaluation",
+    "CipherContext",
     "ILCClient",
     "ILCServer",
     "build_local_kernel",
