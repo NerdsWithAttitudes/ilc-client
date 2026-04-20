@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import json
+import tempfile
 from unittest.mock import patch
 
 import tinychain as tc
@@ -71,6 +72,19 @@ class ContractTests(unittest.TestCase):
                 bearer_token="stub-token",
                 wasm_path=Path("artifacts/does-not-exist.wasm"),
             )
+
+    def test_wasm_install_rejects_hash_mismatch(self) -> None:
+        client = ILCClient()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            wasm_path = Path(temp_dir) / "cipher_wasm.wasm"
+            wasm_path.write_bytes(b"test-bytes")
+            with self.assertRaises(ValueError):
+                wasm_install(
+                    client,
+                    bearer_token="stub-token",
+                    wasm_path=wasm_path,
+                    expected_sha256="0" * 64,
+                )
 
     def test_example_dry_run(self) -> None:
         out = subprocess.check_output(

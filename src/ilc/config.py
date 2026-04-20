@@ -32,6 +32,7 @@ SERVICE_ADMIN_EMAIL = "haydn" + "@" + _SERVICE_ADMIN_DOMAIN
 
 # Local runtime artifact path (never committed to this repo)
 ENV_ILC_CLIENT_WASM_PATH = "ILC_CLIENT_WASM_PATH"
+ENV_ILC_CLIENT_WASM_SHA256 = "ILC_CLIENT_WASM_SHA256"
 DEFAULT_CLIENT_WASM_PATH = Path(
     os.environ.get(ENV_ILC_CLIENT_WASM_PATH, "artifacts/cipher_wasm.wasm")
 )

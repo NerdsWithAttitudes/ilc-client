@@ -171,6 +171,8 @@ export TC_BEARER_TOKEN="<token from admin>"
 export TC_INSTALL_BEARER_TOKEN="$TC_BEARER_TOKEN"
 export TC_ACTOR_ID="your-group/your-user"
 export TC_TOKEN_HOST="/lib/applied-physics/ilc/0.1.0"
+# optional but recommended: enforce WASM integrity at runtime
+export ILC_CLIENT_WASM_SHA256="<sha256 hex of cipher_wasm.wasm>"
 
 # 5) Verify configuration
 python examples/abc.py --dry-run
@@ -184,6 +186,9 @@ python examples/abc.py \
 ```
 
 Use `--json` for machine-readable output in automation.
+
+If `ILC_CLIENT_WASM_SHA256` is set, runtime installation enforces that hash
+before loading the WASM artifact.
 
 ## TinyChain execution model
 

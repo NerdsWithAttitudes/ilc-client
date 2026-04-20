@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Optional
 
@@ -37,6 +38,7 @@ def wasm_install(
     *,
     bearer_token: str,
     wasm_path: Path = DEFAULT_CLIENT_WASM_PATH,
+    expected_sha256: Optional[str] = None,
     kernel: Optional[object] = None,
     data_dir: Optional[Path] = None,
 ) -> object:
@@ -45,6 +47,15 @@ def wasm_install(
         raise FileNotFoundError(
             f"WASM file not found at {wasm_path}. Build/provision it separately and pass --wasm-path."
         )
+
+    if expected_sha256:
+        digest = hashlib.sha256(wasm_path.read_bytes()).hexdigest().lower()
+        expected = expected_sha256.strip().lower()
+        if digest != expected:
+            raise ValueError(
+                "WASM SHA-256 mismatch: "
+                f"expected {expected}, got {digest} for {wasm_path}"
+            )
 
     return tc.wasm.install(
         schema_owner.schema(),

@@ -7,10 +7,10 @@ name = "ilc"
 version = "0.1.0"
 description = "Public Python integration package for ILC client/server libraries"
 readme = "README.md"
-license = { text = "MIT" }
+license = "Apache-2.0"
 requires-python = ">=3.10"
 dependencies = [
-  "tinychain>=0.1.0",
+  "tinychain>=0.17.0,<0.18",
 ]
 
 [tool.setuptools]
