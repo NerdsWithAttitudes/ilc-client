@@ -6,14 +6,11 @@ import subprocess
 import sys
 import json
 import tempfile
-from unittest.mock import patch
 
 import tinychain as tc
 from tinychain.uri import URI
 
 from ilc import (
-    AbcEvaluation,
-    CipherContext,
     DEFAULT_CLIENT_LIBRARY_ROOT,
     DEFAULT_CLIENT_WASM_PATH,
     DEFAULT_LOCAL_AUTHORITY,
@@ -22,7 +19,6 @@ from ilc import (
     ENV_TC_TOKEN_HOST,
     ILCClient,
     ILCServer,
-    evaluate_abc,
     wasm_install,
 )
 
@@ -86,104 +82,115 @@ class ContractTests(unittest.TestCase):
                     expected_sha256="0" * 64,
                 )
 
-    def test_example_dry_run(self) -> None:
+    def test_chart_v2_example_dry_run(self) -> None:
         out = subprocess.check_output(
-            [sys.executable, "examples/abc.py", "--dry-run", "--json"],
+            [sys.executable, "examples/chart_v2.py", "--json"],
             text=True,
         )
         payload = json.loads(out)
         self.assertEqual(
-            payload["client_id"],
-            DEFAULT_CLIENT_LIBRARY_ROOT,
+            payload["setup"]["path"],
+            f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/setup",
         )
         self.assertEqual(
-            payload["server_route_root"],
-            DEFAULT_SERVER_LIBRARY_ROOT,
+            payload["add"]["path"],
+            f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/add",
         )
         self.assertEqual(
-            payload["server_link"],
-            f"{DEFAULT_SERVER_AUTHORITY}{DEFAULT_SERVER_LIBRARY_ROOT}",
+            payload["approx_plan_mul"]["path"],
+            f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/approx/plan_mul",
         )
-        self.assertEqual(payload["wasm_path"], str(DEFAULT_CLIENT_WASM_PATH))
-
-    def test_deferred_add_accepts_negated_rhs_for_subtraction_flow(self) -> None:
-        client = ILCClient()
-        with tc.backend(auto_execute=False):
-            op = client.add(metric=[3, 5], lhs=[10.0, 0.0], rhs=[-3.0, 0.0])
-        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/add")
-        self.assertEqual(op.body["rhs"], [-3.0, 0.0])
-        self.assertNotIn("context", op.body)
-
-    def test_deferred_gemm_route_shape_and_params(self) -> None:
-        client = ILCClient()
-        with tc.backend(auto_execute=False):
-            op = client.gemm(
-                metric=[3, 5],
-                lhs=[1.0, 2.0, 3.0, 4.0],
-                rhs=[5.0, 6.0, 7.0, 8.0],
-                lhs_rows=2,
-                lhs_cols=2,
-                rhs_cols=2,
-            )
-        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/gemm")
-        self.assertEqual(op.body["lhs_rows"], 2)
-        self.assertEqual(op.body["lhs_cols"], 2)
-        self.assertEqual(op.body["rhs_cols"], 2)
-        self.assertNotIn("context", op.body)
-
-    def test_server_encrypt_includes_explicit_context(self) -> None:
-        server = ILCServer()
-        context: CipherContext = {
-            "version": 1,
-            "alg": "HS256",
-            "kid": None,
-            "payload_b64": "payload",
-            "signature_b64": "signature",
-        }
-        op = server.encrypt(
-            context=context,
-            payload=[1, 2, 3],
-            budget_log2=20,
+        self.assertEqual(
+            payload["approx_gemm"]["path"],
+            f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/approx/gemm",
         )
-        self.assertEqual(op.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/encrypt")
-        self.assertEqual(op.body["context"]["alg"], "HS256")
-        self.assertEqual(op.body["payload"], [1, 2, 3])
 
-    def test_secret_routes_require_context_while_eval_routes_do_not(self) -> None:
+    def test_server_routes_are_indcpa_chart_routes(self) -> None:
         server = ILCServer()
-        client = ILCClient()
-        context: CipherContext = {
-            "version": 1,
-            "alg": "HS256",
-            "kid": "review",
-            "payload_b64": "payload",
-            "signature_b64": "signature",
-        }
-
-        encrypt_op = server.encrypt(context=context, payload=[7, 0], budget_log2=20)
-        self.assertIn("context", encrypt_op.body)
-        self.assertEqual(encrypt_op.body["context"]["kid"], "review")
-
-        with tc.backend(auto_execute=False):
-            eval_op = client.add(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
-        self.assertNotIn("context", eval_op.body)
-
-    def test_setup_response_context_can_be_passed_directly_to_encrypt(self) -> None:
-        server = ILCServer()
-        setup_response = {
-            "public": {"cipher_metric": [1, 2]},
-            "context": {
-                "version": 1,
-                "alg": "HS256",
-                "kid": None,
-                "payload_b64": "payload",
-                "signature_b64": "signature",
+        public_context = {"context_id": [1] * 16}
+        handle = {"context_id": [1] * 16, "handle": [2] * 32}
+        ciphertext = {"context_id": [1] * 16, "limbs": [[0, 1]]}
+        approx_input = {
+            "ciphertext": {
+                "ciphertext": ciphertext,
+                "shape": [1, 2],
+                "packed_len": 2,
+                "scale_bits": 20,
             },
+            "handle": handle,
         }
-        context: CipherContext = setup_response["context"]
-        op = server.encrypt(context=context, payload=[9, 0], budget_log2=20)
-        self.assertEqual(setup_response["public"]["cipher_metric"], [1, 2])
-        self.assertEqual(op.body["context"]["alg"], "HS256")
+
+        setup = server.setup(
+            params={"moduli": [65521, 65537], "params_id": [9] * 16},
+            payload_dims=2,
+            representative_dims=4,
+            metric_policy="public-default",
+        )
+        encrypt = server.encrypt(public_context=public_context, payload=[1, 2])
+        decrypt = server.decrypt(
+            public_context=public_context,
+            ciphertext=ciphertext,
+            handle=handle,
+        )
+        record = server.record_eval(
+            public_context=public_context,
+            op="add",
+            input_handles=[handle, handle],
+        )
+        exact_plan = server.exact_plan_mul(
+            public_context=public_context,
+            lhs={"ciphertext": ciphertext, "handle": handle},
+            rhs={"ciphertext": ciphertext, "handle": handle},
+        )
+        mul = server.approx_plan_mul(
+            public_context=public_context,
+            lhs=approx_input,
+            rhs=approx_input,
+            lhs_abs_bound=4.0,
+            rhs_abs_bound=8.0,
+            lhs_abs_error=0.000001,
+            rhs_abs_error=0.000001,
+            validity_budget=10,
+        )
+        gemm = server.approx_plan_gemm(
+            public_context=public_context,
+            lhs=approx_input,
+            rhs=approx_input,
+            lhs_abs_bound=4.0,
+            rhs_abs_bound=8.0,
+            lhs_abs_error=0.000001,
+            rhs_abs_error=0.000001,
+            validity_budget=10,
+        )
+
+        self.assertEqual(setup.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/setup")
+        self.assertEqual(setup.body["admitted_ops"], ["add"])
+        self.assertEqual(encrypt.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/encrypt")
+        self.assertEqual(decrypt.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/decrypt")
+        self.assertEqual(record.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/record_eval")
+        self.assertEqual(exact_plan.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/exact/plan_mul")
+        self.assertEqual(mul.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/approx/plan_mul")
+        self.assertEqual(gemm.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/approx/plan_gemm")
+
+    def test_client_add_route_is_chart_local_only(self) -> None:
+        client = ILCClient()
+        public_context = {"context_id": [1] * 16, "moduli": [65521, 65537]}
+        lhs = {"context_id": [1] * 16, "limbs": [[1, 2], [3, 4]]}
+        rhs = {"context_id": [1] * 16, "limbs": [[5, 6], [7, 8]]}
+
+        with tc.backend(auto_execute=False):
+            op = client.add(
+                public_context=public_context,
+                lhs_ciphertext=lhs,
+                rhs_ciphertext=rhs,
+            )
+
+        self.assertEqual(op.method, "POST")
+        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/add")
+        self.assertIn("public_context", op.body)
+        self.assertIn("lhs_ciphertext", op.body)
+        self.assertIn("rhs_ciphertext", op.body)
+        self.assertNotIn("handle", op.body)
 
     def test_no_handle_classes_exported(self) -> None:
         import ilc
@@ -191,24 +198,15 @@ class ContractTests(unittest.TestCase):
         self.assertFalse(hasattr(ilc, "SecretCryptoHandle"))
         self.assertFalse(hasattr(ilc, "PublicEvalHandle"))
 
-    def test_evaluate_abc_returns_expected_result(self) -> None:
-        client = ILCClient()
-        with patch.object(
-            ILCClient,
-            "add",
-            side_effect=["op-add-ab", "op-add-neg-c"],
-        ), patch.object(
-            tc,
-            "execute",
-            side_effect=[{"result": [12.0, 0.0]}, {"result": [9.0, 0.0]}],
-        ) as execute_mock:
-            result = evaluate_abc(client=client, a=7, b=5, c=3)
+    def test_retired_public_helpers_are_removed(self) -> None:
+        import ilc
 
-        self.assertEqual(execute_mock.call_count, 2)
-        self.assertIsInstance(result, AbcEvaluation)
-        self.assertEqual(result.recovered, 9)
-        self.assertEqual(result.expected, 9)
-        self.assertTrue(result.ok)
+        self.assertFalse(hasattr(ilc, "CipherContext"))
+        self.assertFalse(hasattr(ilc, "evaluate_abc"))
+        client = ILCClient()
+        self.assertFalse(hasattr(client, "mul"))
+        self.assertFalse(hasattr(client, "gemm"))
+        self.assertFalse(hasattr(client, "chart_add"))
 
     def test_no_authcontext_export(self) -> None:
         import ilc
@@ -217,7 +215,7 @@ class ContractTests(unittest.TestCase):
     def test_no_bind_auth_api(self) -> None:
         self.assertFalse(hasattr(ILCClient, "bind_auth"))
 
-    def test_no_legacy_http_transport_shim(self) -> None:
+    def test_no_raw_http_transport_shim(self) -> None:
         root = self._repo_root()
         src_files = sorted((root / "src").rglob("*.py"))
         self.assertTrue(src_files, "expected Python source files under src/")

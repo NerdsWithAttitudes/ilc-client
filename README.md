@@ -14,9 +14,11 @@ Python integration package for Infinite Lattice Cryptography (ILC).
 ## Scope
 
 This repository provides Python integration wrappers only:
-- remote server calls for authenticated `encrypt` and `decrypt`
-- local WASM calls for evaluator-side `add`, `mul`, and `gemm`
-- one reference demonstration script: `a + b - c`
+- remote server calls for authenticated chart `setup`, `encrypt`, `decrypt`,
+  `record_eval`, and exact/approximate planning
+- local WASM calls for evaluator-side chart `add`, `exact_mul`, `exact_gemm`,
+  `approx_mul`, and `approx_gemm`
+- one reference route walkthrough: `examples/chart_v2.py`
 
 This repository does not contain proprietary implementation internals.
 
@@ -30,33 +32,49 @@ ciphertext payloads and do not expose separate exact-vs-approx client classes.
 - Runtime helpers: `build_local_kernel` and `wasm_install` in `src/ilc/runtime.py`
 - Transport/auth execution: TinyChain built-ins (`tc.execute`, `tc.backend`,
   bearer-token flow in TinyChain client runtime)
-- Demonstration script: [`examples/abc.py`](examples/abc.py)
+- Chart route walkthrough: [`examples/chart_v2.py`](examples/chart_v2.py)
 
 ## API surface
 
-- Ciphertext evaluator ops: `add`, `mul`, `gemm`
+- Server ops: `setup`, `encrypt`, `decrypt`, `record_eval`,
+  `exact_plan_mul`, `exact_plan_gemm`, `approx_plan_mul`, `approx_plan_gemm`
+- Client evaluator ops: `add`, `exact_mul`, `exact_gemm`, `approx_mul`,
+  `approx_gemm`
 - Route methods return `OpRef`; execute with `tc.execute(op)` inside
   `with tc.backend(...):`.
-- The `a + b - c` script is a demonstration wrapper over these ciphertext ops.
 
 ### Reviewer-Facing Capability Split
 
 The public API keeps one server wrapper and one client wrapper:
 
-- `ILCServer`: `setup`, `encrypt`, `decrypt`
-- `ILCClient`: `add`, `mul`, `gemm`
+- `ILCServer`: `setup`, `encrypt`, `decrypt`, `record_eval`,
+  `exact_plan_mul`, `exact_plan_gemm`, `approx_plan_mul`, `approx_plan_gemm`
+- `ILCClient`: `add`, `exact_mul`, `exact_gemm`, `approx_mul`,
+  `approx_gemm`
 
-`ILCServer.encrypt/decrypt` require structured `CipherContext`. `ILCClient`
-evaluator ops do not accept or require `CipherContext`.
+Addition is local through `ILCClient.add`. Multiplication and GEMM use a
+server-planned witness and local evaluator execution: the server authorizes and
+mints a fresh representative witness from opaque handles, and the local client
+combines ciphertext bodies with that witness without decrypting plaintext or
+using a refresh route.
 
 ### Operation Dependency Matrix
 
-- `setup`: requires `secret_metric`
-- `encrypt`: requires `CipherContext` (derived from setup with `secret_metric`)
-- `decrypt`: requires `CipherContext` (derived from setup with `secret_metric`)
-- `add`: does not require `CipherContext` or `secret_metric`
-- `mul`: does not require `CipherContext` or `secret_metric`
-- `gemm`: does not require `CipherContext` or `secret_metric`
+- `setup`: requires public parameters, payload dimension, representative
+  dimension, and metric policy; it does not accept a user-provided secret metric
+- `encrypt`: requires public chart context and plaintext payload
+- `decrypt`: requires public chart context, representative ciphertext, and
+  opaque handle
+- `add`: requires public chart context and two representative ciphertext bodies;
+  it does not receive handles or mask state
+- `exact_plan_mul` / `exact_plan_gemm`: require public chart context plus
+  opaque handles, and mint evaluator witnesses on the server
+- `approx_plan_mul` / `approx_plan_gemm`: require public chart context,
+  approximate opaque handles, error-ledger inputs, and validity budget; they
+  mint evaluator witnesses on the server
+- `exact_mul` / `exact_gemm` / `approx_mul` / `approx_gemm`: require public
+  chart context, ciphertext tensors, and the server-planned witness; they
+  execute locally in the evaluator WASM
 
 ### Reviewer Walkthrough
 
@@ -70,50 +88,30 @@ client = ILCClient()
 # 1) Setup (secret-side)
 setup_op = server.setup(
     params={"moduli": [65521, 65537, 65543], "params_id": [9] * 16},
-    secret_metric=[3, 5, 7, 11],
     payload_dims=2,
-    nonce_dims=2,
-    nonce_bound=16,
+    representative_dims=4,
+    metric_policy="public-default",
 )
-# In a real run, execute setup_op with tinychain:
 # setup_response = tc.execute(setup_op)
-# context = setup_response["context"]
-# public = setup_response["public"]
-# (framework already decodes the response body into Python values)
-setup_response = {
-    "public": {"cipher_metric": [0, 0, 0, 0]},
-    "context": {
-        "version": 1,
-        "alg": "HS256",
-        "kid": "review",
-        "payload_b64": "...",
-        "signature_b64": "...",
-    },
-}
-context = setup_response["context"]
-public = setup_response["public"]
+# public_context = setup_response["public_context"]
+public_context = {"context_id": [0] * 16}
 
-# 2) Secret-only operations (explicit context dependency)
+# 2) Server encryption/decryption
 ct_op = server.encrypt(
-    context=context,
+    public_context=public_context,
     payload=[7, 5],
-    budget_log2=20,
 )
 pt_op = server.decrypt(
-    context=context,
-    ciphertext={"limbs": [[0, 1]], "key_id": [0] * 16, "params_id": [9] * 16, "budget_log2": 20, "max_budget_log2": 20},
+    public_context=public_context,
+    ciphertext={"context_id": [0] * 16, "limbs": [[0, 1]]},
+    handle={"context_id": [0] * 16, "handle": [0] * 32},
 )
 
-# 3) Public evaluator operations (no CipherContext argument)
-sum_op = client.add(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
-prod_op = client.mul(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
-gemm_op = client.gemm(
-    metric=[3, 5],
-    lhs=[1.0, 2.0, 3.0, 4.0],
-    rhs=[5.0, 6.0, 7.0, 8.0],
-    lhs_rows=2,
-    lhs_cols=2,
-    rhs_cols=2,
+# 3) Local evaluator addition
+sum_op = client.add(
+    public_context=public_context,
+    lhs_ciphertext={"context_id": [0] * 16, "limbs": [[0, 1]]},
+    rhs_ciphertext={"context_id": [0] * 16, "limbs": [[2, 3]]},
 )
 
 # Execute with TinyChain when running in backend scope.
@@ -175,17 +173,29 @@ export TC_TOKEN_HOST="/lib/applied-physics/ilc/0.1.0"
 export ILC_CLIENT_WASM_SHA256="<sha256 hex of cipher_wasm.wasm>"
 
 # 5) Verify configuration
-python examples/abc.py --dry-run
+python examples/chart_v2.py --json
 
 # 6) Run the demonstration (requires prebuilt client WASM)
-python examples/abc.py \
+python examples/chart_v2.py \
+  --execute \
   --server https://api.tctest.net \
   --wasm-path /path/to/cipher_wasm.wasm \
-  --a 7 --b 5 --c 3
+  --json
 
 ```
 
 Use `--json` for machine-readable output in automation.
+
+## v2 chart route dry run
+
+```bash
+python examples/chart_v2.py --json
+```
+
+This prints the route sequence for chart setup/encrypt, local chart addition,
+server-side additive handle recording, server-side planning, and local
+evaluator multiplication/GEMM. It is a route contract walkthrough, not a local
+cryptographic implementation.
 
 If `ILC_CLIENT_WASM_SHA256` is set, runtime installation enforces that hash
 before loading the WASM artifact.

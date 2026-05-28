@@ -26,6 +26,6 @@ cat <<MSG
 
 Bootstrap + contract tests complete.
 If api.tctest.net is not ready yet, run against a local/private server:
-  $VENV_DIR/bin/python examples/abc.py --server http://127.0.0.1:8700
+  $VENV_DIR/bin/python examples/chart_v2.py --execute --server http://127.0.0.1:8700
 
 MSG

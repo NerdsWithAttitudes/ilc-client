@@ -12,4 +12,4 @@ if [[ -z "$SERVER" ]]; then
   exit 1
 fi
 
-"$VENV_DIR/bin/python" examples/abc.py --server "$SERVER"
+"$VENV_DIR/bin/python" examples/chart_v2.py --execute --server "$SERVER"

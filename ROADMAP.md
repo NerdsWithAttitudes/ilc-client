@@ -15,7 +15,7 @@ package and related ecosystem dependencies.
 1. Post-quantum upgrade path for token signing/verification
 - Track and adopt post-quantum security support in `rjwt`.
 - Reference issue: https://github.com/TinyChain-Inc/rjwt/issues/4
-- Goal: maintain compatibility guidance while migrating toward PQ-ready auth.
+- Goal: keep the chart-route auth story stable while migrating toward PQ-ready auth.
 
 ## Planned performance work
 

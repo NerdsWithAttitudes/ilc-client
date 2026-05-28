@@ -21,11 +21,14 @@ from .config import (
     client_library_root,
     server_library_root,
 )
-from .example_ops import AbcEvaluation, evaluate_abc
 from .library import (
-    CipherContext,
     ILCClient,
     ILCServer,
+    OpaqueCiphertextHandle,
+    RepresentativeApproxInput,
+    RepresentativeApproxTensor,
+    RepresentativeCiphertext,
+    RepresentativePublicContext,
 )
 from .runtime import build_local_kernel, wasm_install
 
@@ -51,11 +54,13 @@ __all__ = [
     "SERVICE_ADMIN_EMAIL",
     "client_library_root",
     "server_library_root",
-    "AbcEvaluation",
-    "CipherContext",
     "ILCClient",
     "ILCServer",
+    "OpaqueCiphertextHandle",
+    "RepresentativeApproxInput",
+    "RepresentativeApproxTensor",
+    "RepresentativeCiphertext",
+    "RepresentativePublicContext",
     "build_local_kernel",
-    "evaluate_abc",
     "wasm_install",
 ]

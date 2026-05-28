@@ -58,7 +58,7 @@ Before opening a PR:
 
 ```bash
 ./.venv/bin/python -m pytest -q
-./.venv/bin/python examples/abc.py --dry-run --json
+./.venv/bin/python examples/chart_v2.py --json
 ```
 
 If your change touches live integration workflows, also run:

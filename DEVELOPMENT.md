@@ -15,7 +15,7 @@ editable mode, and runs the package test suite with `pytest`.
 
 ```bash
 ./.venv/bin/python -m pytest -q
-./.venv/bin/python examples/abc.py --dry-run --json
+./.venv/bin/python examples/chart_v2.py --json
 ```
 
 ## Local integration check
@@ -30,7 +30,7 @@ ILC_INTEGRATION_SERVER=http://127.0.0.1:8700 ./scripts/integration_smoke.sh
 
 Workflow: `.github/workflows/ci.yml`
 
-- `Contract Tests` always runs (`pytest` + `examples/abc.py --dry-run --json`).
+- `Contract Tests` always runs (`pytest` + `examples/chart_v2.py --json`).
 - `Live ABC Smoke` runs only when repository variable `ILC_ENABLE_LIVE_SMOKE=1`.
 - Scheduled config drift check: `.github/workflows/preflight.yml`.
 

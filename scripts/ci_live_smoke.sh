@@ -79,7 +79,8 @@ export TC_TOKEN_HOST="$TOKEN_HOST"
 export ILC_INTEGRATION_SERVER="$SERVER"
 export ILC_WASM_PATH="$WASM_PATH"
 
-"$VENV_DIR/bin/python" examples/abc.py \
+"$VENV_DIR/bin/python" examples/chart_v2.py \
+  --execute \
   --server "$SERVER" \
   --wasm-path "$WASM_PATH" \
   --json
