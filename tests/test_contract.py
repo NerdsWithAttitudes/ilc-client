@@ -185,7 +185,7 @@ class ContractTests(unittest.TestCase):
                 rhs_ciphertext=rhs,
             )
 
-        self.assertEqual(op.method, "POST")
+        self.assertEqual(op.method, "GET")
         self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/add")
         self.assertIn("public_context", op.body)
         self.assertIn("lhs_ciphertext", op.body)

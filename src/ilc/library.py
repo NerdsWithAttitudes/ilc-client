@@ -23,6 +23,10 @@ RepresentativeApproxTensor: TypeAlias = dict[str, Any]
 RepresentativeApproxInput: TypeAlias = dict[str, Any]
 
 
+def _without_none(body: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in body.items() if value is not None}
+
+
 class ILCServer(Library):
     """Remote ILC server wrapper for authenticated chart representative routes."""
 
@@ -35,8 +39,8 @@ class ILCServer(Library):
     def route_root(self) -> str:
         return self.id().path
 
-    def _post(self, path: str, body: dict[str, Any]) -> tc.OpRef:
-        return tc.OpRef("POST", f"{self.route_root}{path}", body=body)
+    def _post(self, path: str, **body: Any) -> tc.OpRef:
+        return tc.opref.post(f"{self.route_root}{path}", body=_without_none(body))
 
     def setup(
         self,
@@ -49,13 +53,11 @@ class ILCServer(Library):
     ) -> tc.OpRef:
         return self._post(
             "/chart/setup",
-            {
-                "params": params,
-                "payload_dims": int(payload_dims),
-                "representative_dims": int(representative_dims),
-                "metric_policy": metric_policy,
-                "admitted_ops": admitted_ops or ["add"],
-            },
+            params=params,
+            payload_dims=int(payload_dims),
+            representative_dims=int(representative_dims),
+            metric_policy=metric_policy,
+            admitted_ops=admitted_ops or ["add"],
         )
 
     def encrypt(
@@ -65,13 +67,12 @@ class ILCServer(Library):
         payload: list[int],
         budget_log2: int | None = None,
     ) -> tc.OpRef:
-        body: dict[str, object] = {
-            "public_context": public_context,
-            "payload": payload,
-        }
-        if budget_log2 is not None:
-            body["budget_log2"] = budget_log2
-        return self._post("/chart/encrypt", body)
+        return self._post(
+            "/chart/encrypt",
+            public_context=public_context,
+            payload=payload,
+            budget_log2=budget_log2,
+        )
 
     def decrypt(
         self,
@@ -82,11 +83,9 @@ class ILCServer(Library):
     ) -> tc.OpRef:
         return self._post(
             "/chart/decrypt",
-            {
-                "public_context": public_context,
-                "ciphertext": ciphertext,
-                "handle": handle,
-            },
+            public_context=public_context,
+            ciphertext=ciphertext,
+            handle=handle,
         )
 
     def record_eval(
@@ -98,11 +97,9 @@ class ILCServer(Library):
     ) -> tc.OpRef:
         return self._post(
             "/chart/record_eval",
-            {
-                "public_context": public_context,
-                "op": op,
-                "input_handles": input_handles,
-            },
+            public_context=public_context,
+            op=op,
+            input_handles=input_handles,
         )
 
     def exact_plan_mul(
@@ -114,11 +111,9 @@ class ILCServer(Library):
     ) -> tc.OpRef:
         return self._post(
             "/chart/exact/plan_mul",
-            {
-                "public_context": public_context,
-                "lhs": lhs,
-                "rhs": rhs,
-            },
+            public_context=public_context,
+            lhs=lhs,
+            rhs=rhs,
         )
 
     def exact_plan_gemm(
@@ -130,11 +125,9 @@ class ILCServer(Library):
     ) -> tc.OpRef:
         return self._post(
             "/chart/exact/plan_gemm",
-            {
-                "public_context": public_context,
-                "lhs": lhs,
-                "rhs": rhs,
-            },
+            public_context=public_context,
+            lhs=lhs,
+            rhs=rhs,
         )
 
     def approx_plan_mul(
@@ -151,16 +144,14 @@ class ILCServer(Library):
     ) -> tc.OpRef:
         return self._post(
             "/chart/approx/plan_mul",
-            {
-                "public_context": public_context,
-                "lhs": lhs,
-                "rhs": rhs,
-                "lhs_abs_bound": lhs_abs_bound,
-                "rhs_abs_bound": rhs_abs_bound,
-                "lhs_abs_error": lhs_abs_error,
-                "rhs_abs_error": rhs_abs_error,
-                "validity_budget": validity_budget,
-            },
+            public_context=public_context,
+            lhs=lhs,
+            rhs=rhs,
+            lhs_abs_bound=lhs_abs_bound,
+            rhs_abs_bound=rhs_abs_bound,
+            lhs_abs_error=lhs_abs_error,
+            rhs_abs_error=rhs_abs_error,
+            validity_budget=validity_budget,
         )
 
     def approx_plan_gemm(
@@ -177,16 +168,14 @@ class ILCServer(Library):
     ) -> tc.OpRef:
         return self._post(
             "/chart/approx/plan_gemm",
-            {
-                "public_context": public_context,
-                "lhs": lhs,
-                "rhs": rhs,
-                "lhs_abs_bound": lhs_abs_bound,
-                "rhs_abs_bound": rhs_abs_bound,
-                "lhs_abs_error": lhs_abs_error,
-                "rhs_abs_error": rhs_abs_error,
-                "validity_budget": validity_budget,
-            },
+            public_context=public_context,
+            lhs=lhs,
+            rhs=rhs,
+            lhs_abs_bound=lhs_abs_bound,
+            rhs_abs_bound=rhs_abs_bound,
+            lhs_abs_error=lhs_abs_error,
+            rhs_abs_error=rhs_abs_error,
+            validity_budget=validity_budget,
         )
 
 
@@ -203,8 +192,8 @@ class ILCClient(Library):
     def route_root(self) -> str:
         return self.id().path
 
-    def _post(self, path: str, body: dict[str, Any]) -> tc.OpRef:
-        return tc.OpRef("POST", f"{self.route_root}{path}", body=body)
+    def _get(self, path: str, **body: Any) -> tc.OpRef:
+        return tc.opref.get(f"{self.route_root}{path}", body=_without_none(body))
 
     def add(
         self,
@@ -213,13 +202,11 @@ class ILCClient(Library):
         lhs_ciphertext: RepresentativeCiphertext,
         rhs_ciphertext: RepresentativeCiphertext,
     ) -> tc.OpRef:
-        return self._post(
+        return self._get(
             "/chart/add",
-            {
-                "public_context": public_context,
-                "lhs_ciphertext": lhs_ciphertext,
-                "rhs_ciphertext": rhs_ciphertext,
-            },
+            public_context=public_context,
+            lhs_ciphertext=lhs_ciphertext,
+            rhs_ciphertext=rhs_ciphertext,
         )
 
     def exact_mul(
@@ -230,14 +217,12 @@ class ILCClient(Library):
         rhs_ciphertext: RepresentativeCiphertext,
         witness: RepresentativeCiphertext,
     ) -> tc.OpRef:
-        return self._post(
+        return self._get(
             "/chart/exact/mul",
-            {
-                "public_context": public_context,
-                "lhs_ciphertext": lhs_ciphertext,
-                "rhs_ciphertext": rhs_ciphertext,
-                "witness": witness,
-            },
+            public_context=public_context,
+            lhs_ciphertext=lhs_ciphertext,
+            rhs_ciphertext=rhs_ciphertext,
+            witness=witness,
         )
 
     def exact_gemm(
@@ -248,14 +233,12 @@ class ILCClient(Library):
         rhs_ciphertext: RepresentativeCiphertext,
         witness: RepresentativeCiphertext,
     ) -> tc.OpRef:
-        return self._post(
+        return self._get(
             "/chart/exact/gemm",
-            {
-                "public_context": public_context,
-                "lhs_ciphertext": lhs_ciphertext,
-                "rhs_ciphertext": rhs_ciphertext,
-                "witness": witness,
-            },
+            public_context=public_context,
+            lhs_ciphertext=lhs_ciphertext,
+            rhs_ciphertext=rhs_ciphertext,
+            witness=witness,
         )
 
     def approx_mul(
@@ -266,14 +249,12 @@ class ILCClient(Library):
         rhs_approx: RepresentativeApproxTensor,
         witness_approx: RepresentativeApproxTensor,
     ) -> tc.OpRef:
-        return self._post(
+        return self._get(
             "/chart/approx/mul",
-            {
-                "public_context": public_context,
-                "lhs_approx": lhs_approx,
-                "rhs_approx": rhs_approx,
-                "witness_approx": witness_approx,
-            },
+            public_context=public_context,
+            lhs_approx=lhs_approx,
+            rhs_approx=rhs_approx,
+            witness_approx=witness_approx,
         )
 
     def approx_gemm(
@@ -284,12 +265,10 @@ class ILCClient(Library):
         rhs_approx: RepresentativeApproxTensor,
         witness_approx: RepresentativeApproxTensor,
     ) -> tc.OpRef:
-        return self._post(
+        return self._get(
             "/chart/approx/gemm",
-            {
-                "public_context": public_context,
-                "lhs_approx": lhs_approx,
-                "rhs_approx": rhs_approx,
-                "witness_approx": witness_approx,
-            },
+            public_context=public_context,
+            lhs_approx=lhs_approx,
+            rhs_approx=rhs_approx,
+            witness_approx=witness_approx,
         )
