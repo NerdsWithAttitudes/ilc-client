@@ -210,6 +210,9 @@ __marimo__/
 *.wasm
 artifacts/
 
+# Local generated benchmark output
+benchmark-results/
+
 # Local key material (never commit)
 .secrets/
 *.pem

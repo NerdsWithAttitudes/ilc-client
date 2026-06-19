@@ -61,3 +61,14 @@ jobs:
         TC_TOKEN_HOST: ${{ vars.TC_TOKEN_HOST }}
         TC_ACTOR_ID: ${{ vars.TC_ACTOR_ID }}
       run: ./scripts/ci_live_smoke.sh
+    - name: Run executable benchmark smoke
+      env:
+        ILC_INTEGRATION_SERVER: ${{ vars.ILC_INTEGRATION_SERVER }}
+        ILC_WASM_PATH: artifacts/cipher_wasm.wasm
+        ILC_CLIENT_WASM_SHA256: ${{ vars.ILC_CLIENT_WASM_SHA256 }}
+        TC_BEARER_TOKEN: ${{ secrets.TC_BEARER_TOKEN }}
+        TC_INSTALL_BEARER_TOKEN: ${{ secrets.TC_INSTALL_BEARER_TOKEN }}
+        TC_PUBLIC_KEY_B64: ${{ secrets.TC_PUBLIC_KEY_B64 }}
+        TC_TOKEN_HOST: ${{ vars.TC_TOKEN_HOST }}
+        TC_ACTOR_ID: ${{ vars.TC_ACTOR_ID }}
+      run: ./scripts/executable_benchmark_smoke.sh

@@ -16,6 +16,7 @@ editable mode, and runs the package test suite with `pytest`.
 ```bash
 ./.venv/bin/python -m pytest -q
 ./.venv/bin/python examples/abc.py --dry-run --json
+./.venv/bin/python -m ilc.executable.benchmark --workload add_chain --provider plaintext --repeat 3 --output-format json
 ```
 
 ## Local integration check
@@ -95,6 +96,44 @@ Release governance checklist:
 
 Framework-gap tracking:
 - `FRAMEWORK_GAPS.md`
+
+## Executable benchmark checks
+
+Baseline executable benchmark checks require no OpenFHE, WASM, or live ILC
+service:
+
+```bash
+./.venv/bin/python -m pytest -q
+./.venv/bin/python -m ilc.executable.benchmark \
+  --workload add_chain \
+  --provider plaintext \
+  --repeat 3 \
+  --output-format json
+```
+
+CKKS checks require optional OpenFHE Python and are skipped or fail with a
+public missing-dependency error when OpenFHE is unavailable:
+
+```bash
+./.venv/bin/python -m pytest -q -m "ckks"
+./.venv/bin/python -m ilc.executable.benchmark \
+  --workload mnist_linear_v1_b1 \
+  --provider ckks \
+  --repeat 1 \
+  --output-format json
+```
+
+ILC executable benchmark checks require the same live credentials and local
+WASM prerequisites as the ABC smoke:
+
+```bash
+./scripts/ci_preflight.sh
+./scripts/executable_benchmark_smoke.sh
+```
+
+By default this runs `add_chain` with `provider=ilc`. Override with
+`ILC_EXECUTABLE_WORKLOAD`, `ILC_EXECUTABLE_PROVIDER`, or
+`ILC_EXECUTABLE_REPEAT`.
 
 ## Scope reminder
 

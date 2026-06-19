@@ -16,6 +16,7 @@ Python integration package for Infinite Lattice Cryptography (ILC).
 This repository provides Python integration wrappers only:
 - remote server calls for authenticated `encrypt` and `decrypt`
 - local WASM calls for evaluator-side `add`, `mul`, and `gemm`
+- provider-neutral executable-encryption benchmark contracts and CLI
 - one reference demonstration script: `a + b - c`
 
 This repository does not contain proprietary implementation internals.
@@ -28,6 +29,7 @@ ciphertext payloads and do not expose separate exact-vs-approx client classes.
 - Server route wrapper: `ILCServer` in `src/ilc/library.py`
 - Client route wrapper: `ILCClient` in `src/ilc/library.py`
 - Runtime helpers: `build_local_kernel` and `wasm_install` in `src/ilc/runtime.py`
+- Executable benchmark contracts/runtime: `src/ilc/executable/`
 - Transport/auth execution: TinyChain built-ins (`tc.execute`, `tc.backend`,
   bearer-token flow in TinyChain client runtime)
 - Demonstration script: [`examples/abc.py`](examples/abc.py)
@@ -38,6 +40,7 @@ ciphertext payloads and do not expose separate exact-vs-approx client classes.
 - Route methods return `OpRef`; execute with `tc.execute(op)` inside
   `with tc.backend(...):`.
 - The `a + b - c` script is a demonstration wrapper over these ciphertext ops.
+- Executable benchmark CLI: `python -m ilc.executable.benchmark`.
 
 ### Reviewer-Facing Capability Split
 
@@ -57,6 +60,11 @@ evaluator ops do not accept or require `CipherContext`.
 - `add`: does not require `CipherContext` or `secret_metric`
 - `mul`: does not require `CipherContext` or `secret_metric`
 - `gemm`: does not require `CipherContext` or `secret_metric`
+
+Canonical public route methods use the `/chart/...` route family:
+
+- server: `/chart/setup`, `/chart/encrypt`, `/chart/decrypt`
+- client: `/chart/add`, `/chart/approx/mul`, `/chart/approx/gemm`
 
 ### Reviewer Walkthrough
 
@@ -200,6 +208,76 @@ before loading the WASM artifact.
   are used.
 - Client operation payloads in this package include only domain inputs.
 - Active framework-gap candidates (if any) are tracked in `FRAMEWORK_GAPS.md`.
+
+## Executable encryption benchmark
+
+The executable benchmark compares provider-neutral encrypted execution across
+deterministic workloads. It times:
+
+```text
+input encryption + program encryption
+-> node-by-node encrypted execution
+-> output decryption
+-> tolerance validation against plaintext reference
+```
+
+V1 carries a provider-owned encrypted-program artifact and times its creation,
+but it does not claim encrypted-opcode or encrypted-edge interpretation. The
+runtime still traverses the public `PlainProgram` DAG and calls provider
+methods (`add`, `mul`, `gemm`) node-by-node.
+
+Plaintext smoke benchmark:
+
+```bash
+python -m ilc.executable.benchmark \
+  --workload add_chain \
+  --provider plaintext \
+  --repeat 3 \
+  --output-format json
+```
+
+Optional CKKS support requires OpenFHE Python:
+
+```bash
+pip install -e ".[ckks]"
+python -m ilc.executable.benchmark \
+  --workload mnist_linear_v1_b1 \
+  --provider ckks \
+  --repeat 1 \
+  --output-format json
+```
+
+CKKS benchmark snapshot from local validation on 2026-06-19:
+
+- Python: 3.12.3
+- OpenFHE Python: 1.5.1.0.24.4
+- Provider: `ckks`
+- Benchmark repeat count: 5
+- Output validation: all listed workloads passed
+- Scope: correctness-first scalar-packed CKKS, not optimized SIMD CKKS
+
+| Workload | Encrypt s | Execute s | Decrypt s | Total s | Max abs error |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `add_chain` | 1.8191 | 0.1294 | 0.0869 | 2.0353 | 4.71e-14 |
+| `mul_chain` | 0.6108 | 0.4480 | 0.0668 | 1.1256 | 4.03e-14 |
+| `gemm_chain_small` | 0.5020 | 0.3984 | 0.0300 | 0.9303 | 3.08e-14 |
+| `mnist_linear_v1_b1` | 10.8862 | 25.2930 | 0.1094 | 36.2885 | 4.44e-13 |
+
+Generated JSON benchmark output is written to `benchmark-results/` when
+`--output-path` is used. That directory is intentionally ignored by Git; copy
+or archive reviewed result files separately when preparing paper artifacts.
+
+The ILC provider uses only public `ILCServer`, `ILCClient`, TinyChain
+execution, and WASM-install surfaces. Live ILC execution requires server
+credentials and local WASM runtime prerequisites. In CI, the live executable
+benchmark smoke runs only when the live-smoke gate is enabled.
+
+The ILC executable provider is a live integration adapter over the canonical
+deployed ILC route contract. It does not select or encode the canonical
+cryptographic construction; that remains owned by the deployed server and WASM
+implementation. The benchmark snapshot above records CKKS numbers only. Add
+separate ILC benchmark results when a specific deployed ILC implementation is
+being evaluated.
 
 ## Maintenance
 

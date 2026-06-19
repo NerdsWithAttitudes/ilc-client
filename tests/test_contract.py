@@ -143,7 +143,7 @@ class ContractTests(unittest.TestCase):
             payload=[1, 2, 3],
             budget_log2=20,
         )
-        self.assertEqual(op.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/encrypt")
+        self.assertEqual(op.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/encrypt")
         self.assertEqual(op.body["context"]["alg"], "HS256")
         self.assertEqual(op.body["payload"], [1, 2, 3])
 

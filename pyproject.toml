@@ -13,8 +13,23 @@ dependencies = [
   "tinychain>=0.17.0,<0.18",
 ]
 
+[project.optional-dependencies]
+ckks = [
+  "openfhe",
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"ilc.executable.fixtures" = ["*.json"]
+
+[tool.pytest.ini_options]
+markers = [
+  "ckks: optional CKKS/OpenFHE integration tests",
+  "ilc: optional live ILC integration tests",
+  "integration: integration tests requiring external local/runtime dependencies",
+]

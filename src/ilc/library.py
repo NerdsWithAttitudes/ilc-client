@@ -61,7 +61,7 @@ class ILCServer(Library):
         salt_hex: str | None = None,
     ) -> object:
         return self._post(
-            "/setup",
+            "/chart/setup",
             {
                 "params": params,
                 "secret_metric": secret_metric,
@@ -85,7 +85,7 @@ class ILCServer(Library):
         }
         if budget_log2 is not None:
             body["budget_log2"] = budget_log2
-        return self._post("/encrypt", body)
+        return self._post("/chart/encrypt", body)
 
     def decrypt(
         self,
@@ -94,7 +94,7 @@ class ILCServer(Library):
         ciphertext: dict[str, Any],
     ) -> object:
         return self._post(
-            "/decrypt",
+            "/chart/decrypt",
             {
                 "context": context,
                 "ciphertext": ciphertext,
