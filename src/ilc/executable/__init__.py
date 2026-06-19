@@ -13,6 +13,18 @@ from .errors import (
     ToleranceExceededError,
     UnsupportedOperationError,
 )
+from .encoding import (
+    ENCRYPTED_GRAPH_REPRESENTATION_SUFFIX,
+    ENCRYPTED_GRAPH_TENSOR_NAMES,
+    OPCODE_ORDER,
+    PROGRAM_ENCODING_VERSION,
+    EncryptedGraphProgram,
+    ProgramEncoding,
+    encode_program,
+    encrypted_graph_representation_type,
+    encrypted_graph_tensor_shapes,
+    validate_encrypted_graph_program,
+)
 from .metrics import BenchmarkResult, CSV_COLUMNS, SCHEMA_VERSION
 from .program import EncryptedProgram, PlainProgram, ProgramNode, ProgramOp, frozen_attrs
 from .protocol import ExecutableEncryptionProvider
@@ -34,9 +46,15 @@ __all__ = [
     "ExecutableEncryptionProvider",
     "ExecutableGraphRuntime",
     "ExecutionArtifact",
+    "ENCRYPTED_GRAPH_REPRESENTATION_SUFFIX",
+    "ENCRYPTED_GRAPH_TENSOR_NAMES",
+    "EncryptedGraphProgram",
     "MissingDependencyError",
+    "OPCODE_ORDER",
+    "PROGRAM_ENCODING_VERSION",
     "PlainProgram",
     "PlainTensor",
+    "ProgramEncoding",
     "ProgramNode",
     "ProgramOp",
     "ProgramValidationError",
@@ -54,8 +72,12 @@ __all__ = [
     "check_tolerance",
     "compare_outputs",
     "compute_fingerprint",
+    "encode_program",
+    "encrypted_graph_representation_type",
+    "encrypted_graph_tensor_shapes",
     "estimate_depth",
     "frozen_attrs",
     "load_mnist_fixture",
     "required_program_depth",
+    "validate_encrypted_graph_program",
 ]

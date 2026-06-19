@@ -141,11 +141,13 @@ class ContractTests(unittest.TestCase):
         op = server.encrypt(
             context=context,
             payload=[1, 2, 3],
+            shape=[3, 1],
             budget_log2=20,
         )
         self.assertEqual(op.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/encrypt")
         self.assertEqual(op.body["context"]["alg"], "HS256")
         self.assertEqual(op.body["payload"], [1, 2, 3])
+        self.assertEqual(op.body["shape"], [3, 1])
 
     def test_secret_routes_require_context_while_eval_routes_do_not(self) -> None:
         server = ILCServer()

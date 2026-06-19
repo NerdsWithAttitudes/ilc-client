@@ -30,7 +30,9 @@ from ...library import CipherContext, ILCClient, ILCServer
 from ...runtime import build_local_kernel, wasm_install
 from ..errors import (
     ProviderConfigurationError,
+    UnsupportedOperationError,
 )
+from ..encoding import EncryptedGraphProgram, encode_program, validate_encrypted_graph_program
 from ..program import PlainProgram
 from ..session import BasicSession, compute_fingerprint
 from ..tensors import PlainTensor
@@ -71,13 +73,7 @@ class ILCEncryptedTensor:
     provider_id: str = field(default="ilc", init=False)
 
 
-@dataclass(frozen=True)
-class ILCEncryptedProgram:
-    session_id: str
-    program_id: str
-    _encrypted_metadata: Any = field(repr=False)
-    provider_id: str = field(default="ilc", init=False)
-    representation_type: str = field(default="ilc_public_program_handle_v1", init=False)
+ILCEncryptedProgram = EncryptedGraphProgram[ILCEncryptedTensor]
 
 
 class ILCProvider:
@@ -170,6 +166,7 @@ class ILCProvider:
             self._server.encrypt(
                 context=self._context,
                 payload=scaled,
+                shape=list(tensor.shape),
                 budget_log2=self._config.scale_bits,
             )
         )
@@ -187,10 +184,39 @@ class ILCProvider:
     ) -> ILCEncryptedProgram:
         if not assume_validated:
             self.validate_program(program)
-        return ILCEncryptedProgram(
+        encoding = encode_program(program)
+        return EncryptedGraphProgram[ILCEncryptedTensor](
+            provider_id="ilc",
             session_id=self._session.session_id,
             program_id=program.id,
-            _encrypted_metadata={"node_count": len(program.nodes), "encoding": "public-program-metadata"},
+            node_ids=encoding.node_ids,
+            input_ids=encoding.input_ids,
+            output_ids=encoding.output_ids,
+            node_shapes=encoding.node_shapes,
+            encrypted_tensors={
+                name: self.encrypt_tensor(tensor)
+                for name, tensor in encoding.tensors.items()
+            },
+        )
+
+    def execute_program(
+        self,
+        encrypted_program: ILCEncryptedProgram,
+        inputs: dict[str, ILCEncryptedTensor],
+    ) -> dict[str, ILCEncryptedTensor]:
+        validate_encrypted_graph_program(
+            encrypted_program,
+            provider_id="ilc",
+            session_id=self._session.session_id,
+        )
+        for input_id, tensor in inputs.items():
+            self._validate_tensor(tensor, f"execute_program input {input_id!r}")
+        raise UnsupportedOperationError(
+            "ILC encrypted-program execution is fail-closed because the current ILCClient evaluator still lacks "
+            "the witness-free encrypted selector-scaling primitive required by the shared encrypted-selector "
+            "interpreter. Program and input tensors are encrypted, and the remaining entirely client-side work is "
+            "to expose ILCClient-backed zero_like, encrypted selector scaling, summation, add, mul, and gemm "
+            "without additional server API or Rust backend changes."
         )
 
     def decrypt_tensor(self, tensor: ILCEncryptedTensor) -> PlainTensor:

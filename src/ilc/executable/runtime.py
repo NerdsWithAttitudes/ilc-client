@@ -53,6 +53,18 @@ class ExecutableGraphRuntime:
         *,
         validate_program: bool = True,
     ) -> ExecutionArtifact:
+        native_execute = getattr(provider, "execute_program", None)
+        if callable(native_execute):
+            self._validate_encrypted_program(provider, program, encrypted_program)
+            outputs = native_execute(encrypted_program, inputs)
+            return ExecutionArtifact.create(
+                program_id=encrypted_program.program_id,
+                provider_id=provider.provider_id,
+                session_id=provider.session.session_id,
+                representation_type=encrypted_program.representation_type,
+                outputs=outputs,
+            )
+
         if validate_program:
             program.revalidate()
             provider.validate_program(program)
@@ -119,4 +131,3 @@ class ExecutableGraphRuntime:
                 raise ProgramValidationError(f"input {input_id!r} session mismatch")
             if tensor.shape != shapes[input_id]:
                 raise ProgramValidationError(f"input {input_id!r} shape mismatch")
-

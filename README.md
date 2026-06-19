@@ -221,10 +221,50 @@ input encryption + program encryption
 -> tolerance validation against plaintext reference
 ```
 
-V1 carries a provider-owned encrypted-program artifact and times its creation,
-but it does not claim encrypted-opcode or encrypted-edge interpretation. The
-runtime still traverses the public `PlainProgram` DAG and calls provider
-methods (`add`, `mul`, `gemm`) node-by-node.
+V1 carries a provider-owned encrypted-program artifact and times its creation.
+For CKKS, `encrypt_program` deterministically encodes the executable graph as
+opcode, adjacency, operand-selector, input-selector, and output-selector
+tensors, then encrypts those tensors in the same CKKS session as the input
+data. CKKS execution remains fully client-local and uses a provider-owned
+`execute_program` path. The CKKS executor uses only the encrypted graph tensors,
+encrypted inputs, and public shape/input/output metadata; it does not inspect
+the plaintext graph's opcodes or edges during execution. The current
+correctness-first scalar CKKS path is intentionally small and expensive because
+encrypted selector application consumes multiplicative depth.
+
+The client standardizes this representation as `EncryptedGraphProgram[T]`.
+CKKS uses `EncryptedGraphProgram[CKKSEncryptedTensor]`; the planned ILC upgrade
+will use `EncryptedGraphProgram[ILCEncryptedTensor]` with the same client-side
+`ProgramEncoding`, metadata validation, and runtime dispatch contract.
+
+Reviewer model:
+
+```text
+PlainProgram
+-> ProgramEncoding tensors
+   - opcode
+   - adjacency
+   - lhs_selector / rhs_selector
+   - input_selector / output_selector
+-> EncryptedGraphProgram[T]
+-> provider.execute_program(encrypted_program, encrypted_inputs)
+-> encrypted outputs
+-> decrypt and validate
+```
+
+The executor may use public tensor shapes, input IDs, and output IDs to allocate
+and route tensors. It must not inspect plaintext opcodes or plaintext graph
+edges. Encrypted selectors choose candidate dataflow terms homomorphically.
+
+| Provider | Program tensors encrypted? | Executor sees plaintext graph? | Status |
+| --- | --- | --- | --- |
+| `ckks` | Yes | No | Implemented scalar-packed baseline |
+| `ilc` | Yes | No | Graph encryption implemented; execution fail-closed pending local selector scaling |
+| `plaintext` | No | Yes | Reference baseline only |
+
+For ILC, the server boundary remains setup plus shaped `/chart/encrypt` and
+`/chart/decrypt`. Program encoding and executable-graph evaluation are client
+responsibilities.
 
 Plaintext smoke benchmark:
 
@@ -247,21 +287,22 @@ python -m ilc.executable.benchmark \
   --output-format json
 ```
 
-CKKS benchmark snapshot from local validation on 2026-06-19:
+CKKS encrypted-graph benchmark snapshot from local validation on 2026-06-19:
 
 - Python: 3.12.3
 - OpenFHE Python: 1.5.1.0.24.4
 - Provider: `ckks`
-- Benchmark repeat count: 5
+- Benchmark repeat count: 1
 - Output validation: all listed workloads passed
 - Scope: correctness-first scalar-packed CKKS, not optimized SIMD CKKS
+- Representation: `ckks_encrypted_graph_tensor_encoding_v1`
 
 | Workload | Encrypt s | Execute s | Decrypt s | Total s | Max abs error |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `add_chain` | 1.8191 | 0.1294 | 0.0869 | 2.0353 | 4.71e-14 |
-| `mul_chain` | 0.6108 | 0.4480 | 0.0668 | 1.1256 | 4.03e-14 |
-| `gemm_chain_small` | 0.5020 | 0.3984 | 0.0300 | 0.9303 | 3.08e-14 |
-| `mnist_linear_v1_b1` | 10.8862 | 25.2930 | 0.1094 | 36.2885 | 4.44e-13 |
+| `mnist_linear_v1_b1` | 10.2417 | 48.1270 | 0.1185 | 58.4872 | 4.26e-13 |
+
+This snapshot is not comparable to older public-schedule CKKS numbers because
+the current executor homomorphically applies encrypted graph selectors.
 
 Generated JSON benchmark output is written to `benchmark-results/` when
 `--output-path` is used. That directory is intentionally ignored by Git; copy
@@ -272,12 +313,20 @@ execution, and WASM-install surfaces. Live ILC execution requires server
 credentials and local WASM runtime prerequisites. In CI, the live executable
 benchmark smoke runs only when the live-smoke gate is enabled.
 
-The ILC executable provider is a live integration adapter over the canonical
-deployed ILC route contract. It does not select or encode the canonical
-cryptographic construction; that remains owned by the deployed server and WASM
-implementation. The benchmark snapshot above records CKKS numbers only. Add
-separate ILC benchmark results when a specific deployed ILC implementation is
-being evaluated.
+The ILC tensor provider is a live integration adapter over the canonical
+deployed ILC route contract. ILC executable-program encryption now constructs
+the same `EncryptedGraphProgram[ILCEncryptedTensor]` artifact as CKKS, using
+the existing shaped `/chart/encrypt` route for graph tensors. ILC encrypted
+execution is fail-closed until `ILCClient` supports the local witness-free
+encrypted selector-scaling primitive required by the shared encrypted-selector
+interpreter; this avoids falling back to plaintext-graph execution for an
+executable-encryption claim. The planned ILC execution path remains entirely
+client-side: execute the shared encrypted graph over encrypted program tensors
+and encrypted data using `ILCClient` homomorphic operations, then decrypt final
+outputs with the existing shaped `/chart/decrypt` route. It requires no
+additional Rust backend or server API changes. The benchmark snapshot above
+records CKKS numbers only. Add separate ILC benchmark results when a specific
+deployed ILC implementation is being evaluated.
 
 ## Maintenance
 

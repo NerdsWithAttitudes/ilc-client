@@ -12,6 +12,7 @@ import pytest
 
 from ilc.executable import (
     DepthBudgetError,
+    ENCRYPTED_GRAPH_TENSOR_NAMES,
     ExecutableEncryptionProvider,
     ExecutableGraphRuntime,
     MissingDependencyError,
@@ -19,6 +20,9 @@ from ilc.executable import (
     PlainTensor,
     ProgramNode,
     ProgramOp,
+    UnsupportedOperationError,
+    encode_program,
+    validate_encrypted_graph_program,
 )
 from ilc.executable.benchmark import BenchmarkConfig, run_benchmark
 from ilc.executable.metrics import SCHEMA_VERSION
@@ -74,6 +78,30 @@ def test_plaintext_provider_runtime_add_mul_gemm() -> None:
 
 def test_plaintext_provider_satisfies_protocol() -> None:
     assert isinstance(PlaintextProvider(), ExecutableEncryptionProvider)
+
+
+def test_program_encoding_contains_adjacency_opcode_and_selectors() -> None:
+    program = PlainProgram(
+        id="program",
+        nodes=(
+            _input("a", (2,)),
+            _input("b", (2,)),
+            _op("sum", ProgramOp.ADD, ("a", "b"), (2,)),
+        ),
+        input_ids=("a", "b"),
+        output_ids=("sum",),
+    )
+    encoding = encode_program(program)
+
+    assert encoding.version == "program_graph_tensor_encoding_v1"
+    assert encoding.node_ids == ("a", "b", "sum")
+    assert set(encoding.tensors) == set(ENCRYPTED_GRAPH_TENSOR_NAMES)
+    assert encoding.tensors["opcode"].shape == (3, 4)
+    assert encoding.tensors["adjacency"].shape == (3, 3)
+    assert encoding.tensors["lhs_selector"].values == pytest.approx((0, 0, 0, 0, 0, 0, 1, 0, 0))
+    assert encoding.tensors["rhs_selector"].values == pytest.approx((0, 0, 0, 0, 0, 0, 0, 1, 0))
+    assert encoding.tensors["adjacency"].values == pytest.approx((0, 0, 1, 0, 0, 1, 0, 0, 0))
+    assert encoding.tensors["output_selector"].values == pytest.approx((0, 0, 1))
 
 
 def test_workload_registry_and_fixture() -> None:
@@ -202,6 +230,22 @@ def test_ilc_provider_uses_public_routes(monkeypatch: pytest.MonkeyPatch) -> Non
     lhs = provider.encrypt_tensor(PlainTensor((1.0, 2.0), (2,)))
     rhs = provider.encrypt_tensor(PlainTensor((1.0, 2.0), (2,)))
     provider.add(lhs, rhs)
+    encrypted_program = provider.encrypt_program(WORKLOAD_REGISTRY["add_chain"].program)
+    assert encrypted_program.representation_type == "ilc_encrypted_graph_tensor_encoding_v1"
+    assert set(encrypted_program.encrypted_tensors) == set(ENCRYPTED_GRAPH_TENSOR_NAMES)
+    validate_encrypted_graph_program(
+        encrypted_program,
+        provider_id="ilc",
+        session_id=provider.session.session_id,
+    )
+    with pytest.raises(UnsupportedOperationError):
+        provider.execute_program(
+            encrypted_program,
+            {
+                input_id: provider.encrypt_tensor(tensor)
+                for input_id, tensor in WORKLOAD_REGISTRY["add_chain"].plain_inputs.items()
+            },
+        )
     provider.decrypt_tensor(lhs)
 
     paths = [path for _, path, _ in calls]
@@ -255,12 +299,32 @@ def test_ilc_provider_from_environment_installs_local_wasm(
 def test_ckks_provider_optional_integration() -> None:
     pytest.importorskip("openfhe")
     ckks = importlib.import_module("ilc.executable.providers.ckks")
-    provider = ckks.CKKSProvider(ckks.CKKSConfig(multiplicative_depth=2))
-    result = run_benchmark(
-        BenchmarkConfig(("add_chain",), ("ckks",), repeat=1),
-        {"ckks": provider},
-    )[0]
-    assert result.passed_validation is True
+    provider = ckks.CKKSProvider(ckks.CKKSConfig(multiplicative_depth=4))
+    program = PlainProgram(
+        id="ckks_gemm_smoke",
+        nodes=(
+            _input("a", (1, 2)),
+            _input("b", (2, 1)),
+            _op("out", ProgramOp.GEMM, ("a", "b"), (1, 1)),
+        ),
+        input_ids=("a", "b"),
+        output_ids=("out",),
+    )
+    encrypted_program = provider.encrypt_program(program)
+    assert encrypted_program.representation_type == "ckks_encrypted_graph_tensor_encoding_v1"
+    assert set(encrypted_program.encrypted_tensors) == set(ENCRYPTED_GRAPH_TENSOR_NAMES)
+    validate_encrypted_graph_program(
+        encrypted_program,
+        provider_id="ckks",
+        session_id=provider.session.session_id,
+    )
+    encrypted_inputs = {
+        "a": provider.encrypt_tensor(PlainTensor((2.0, 3.0), (1, 2))),
+        "b": provider.encrypt_tensor(PlainTensor((5.0, 7.0), (2, 1))),
+    }
+    artifact = ExecutableGraphRuntime().execute(provider, program, encrypted_program, encrypted_inputs)
+    output = provider.decrypt_tensor(artifact.outputs["out"])
+    assert output.values == pytest.approx((31.0,), abs=provider.absolute_tolerance, rel=provider.relative_tolerance)
 
 
 @pytest.mark.integration

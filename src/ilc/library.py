@@ -77,12 +77,15 @@ class ILCServer(Library):
         *,
         context: CipherContext,
         payload: list[int],
+        shape: list[int] | None = None,
         budget_log2: int | None = None,
     ) -> object:
         body: dict[str, object] = {
             "context": context,
             "payload": payload,
         }
+        if shape is not None:
+            body["shape"] = shape
         if budget_log2 is not None:
             body["budget_log2"] = budget_log2
         return self._post("/chart/encrypt", body)
