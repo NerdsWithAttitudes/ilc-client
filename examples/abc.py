@@ -45,7 +45,7 @@ def _missing_env_error() -> str:
         "Missing required environment variables.\n"
         "Set:\n"
         f"  export {ENV_TC_BEARER_TOKEN}=...\n"
-        f"  export {ENV_TC_INSTALL_BEARER_TOKEN}=...   # may match {ENV_TC_BEARER_TOKEN}\n"
+        f"  export {ENV_TC_INSTALL_BEARER_TOKEN}=...   # client-library install token\n"
         f"  export {ENV_TC_PUBLIC_KEY_B64}=...\n"
         "Optional:\n"
         f"  export {ENV_ILC_CLIENT_WASM_SHA256}=<expected wasm sha256>\n"
@@ -59,7 +59,7 @@ def _missing_env_error() -> str:
 
 def _load_runtime_inputs(server: ILCServer) -> RuntimeInputs:
     bearer_token = os.environ.get(ENV_TC_BEARER_TOKEN)
-    install_bearer_token = os.environ.get(ENV_TC_INSTALL_BEARER_TOKEN, bearer_token)
+    install_bearer_token = os.environ.get(ENV_TC_INSTALL_BEARER_TOKEN)
     token_host = os.environ.get(ENV_TC_TOKEN_HOST, server.route_root)
     actor_id = os.environ.get(ENV_TC_ACTOR_ID)
     public_key_b64 = os.environ.get(ENV_TC_PUBLIC_KEY_B64)
@@ -132,15 +132,20 @@ def main() -> int:
     runtime = _load_runtime_inputs(server)
     data_dir = Path(os.environ.get("ILC_LOCAL_DATA_DIR", ".ilc-local"))
     data_dir.mkdir(parents=True, exist_ok=True)
+    # The WASM manifest declares the server library as a dependency, but this
+    # source-free smoke exercises only local evaluator routes. Bind a loopback
+    # dependency for the local kernel so Cloud Run/DNS authorities do not need
+    # to be parsed as local socket routes during install.
+    kernel_client = ILCClient().bind_server(ILCServer(authority=URI.parse(DEFAULT_LOCAL_AUTHORITY)))
     kernel = build_local_kernel(
-        client,
+        kernel_client,
         data_dir=data_dir,
         token_host=runtime.token_host,
         actor_id=runtime.actor_id,
         public_key_b64=runtime.public_key_b64,
     )
     install = wasm_install(
-        client,
+        kernel_client,
         bearer_token=runtime.install_bearer_token,
         wasm_path=wasm_path,
         expected_sha256=runtime.wasm_sha256,
