@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
 from .program import EncryptedProgram, PlainProgram
@@ -43,6 +44,13 @@ class ExecutableEncryptionProvider(Protocol):
     ) -> EncryptedProgram:
         ...
 
+    def execute_program(
+        self,
+        encrypted_program: EncryptedProgram,
+        inputs: Mapping[str, EncryptedTensor],
+    ) -> Mapping[str, EncryptedTensor]:
+        ...
+
     def add(self, lhs: EncryptedTensor, rhs: EncryptedTensor) -> EncryptedTensor:
         ...
 
@@ -54,4 +62,3 @@ class ExecutableEncryptionProvider(Protocol):
 
     def decrypt_tensor(self, tensor: EncryptedTensor) -> PlainTensor:
         ...
-

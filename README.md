@@ -49,22 +49,31 @@ The public API keeps one server wrapper and one client wrapper:
 - `ILCServer`: `setup`, `encrypt`, `decrypt`
 - `ILCClient`: `add`, `mul`, `gemm`
 
-`ILCServer.encrypt/decrypt` require structured `CipherContext`. `ILCClient`
-evaluator ops do not accept or require `CipherContext`.
+`ILCServer.setup` returns a public representative context. `encrypt` and
+`decrypt` take that `public_context` explicitly; callers do not provide a
+secret metric. `ILCClient` evaluator ops consume ciphertext-domain payloads
+and the same public context for representative operations.
 
 ### Operation Dependency Matrix
 
-- `setup`: requires `secret_metric`
-- `encrypt`: requires `CipherContext` (derived from setup with `secret_metric`)
-- `decrypt`: requires `CipherContext` (derived from setup with `secret_metric`)
-- `add`: does not require `CipherContext` or `secret_metric`
-- `mul`: does not require `CipherContext` or `secret_metric`
-- `gemm`: does not require `CipherContext` or `secret_metric`
+- `setup`: server-side; derives metric/chart state from public parameters and
+  server-held secret state.
+- `encrypt`: server-side; requires `public_context`, shaped plaintext payload,
+  and optional budget.
+- `decrypt`: server-side; requires `public_context`, ciphertext, and opaque
+  ciphertext handle.
+- `add`: local evaluator-side; requires `public_context` and representative
+  ciphertexts.
+- `mul`: local evaluator-side; requires `public_context`, representative
+  ciphertexts, and a planned witness for currently deployed ILC routes.
+- `gemm`: local evaluator-side; requires `public_context`, representative
+  ciphertexts, and a planned witness for currently deployed ILC routes.
 
 Canonical public route methods use the `/chart/...` route family:
 
-- server: `/chart/setup`, `/chart/encrypt`, `/chart/decrypt`
-- client: `/chart/add`, `/chart/approx/mul`, `/chart/approx/gemm`
+- server: `/chart/setup`, `/chart/encrypt`, `/chart/decrypt`, `/chart/record_eval`
+- client: `/chart/add`, `/chart/exact/mul`, `/chart/exact/gemm`,
+  `/chart/approx/mul`, `/chart/approx/gemm`
 
 ### Reviewer Walkthrough
 
@@ -78,54 +87,45 @@ client = ILCClient()
 # 1) Setup (secret-side)
 setup_op = server.setup(
     params={"moduli": [65521, 65537, 65543], "params_id": [9] * 16},
-    secret_metric=[3, 5, 7, 11],
     payload_dims=2,
     nonce_dims=2,
-    nonce_bound=16,
 )
 # In a real run, execute setup_op with tinychain:
 # setup_response = tc.execute(setup_op)
-# context = setup_response["context"]
-# public = setup_response["public"]
+# public_context = setup_response["body"]["RepresentativeSetup"]["public_context"]
 # (framework already decodes the response body into Python values)
 setup_response = {
-    "public": {"cipher_metric": [0, 0, 0, 0]},
-    "context": {
-        "version": 1,
-        "alg": "HS256",
-        "kid": "review",
-        "payload_b64": "...",
-        "signature_b64": "...",
-    },
+    "body": {"RepresentativeSetup": {"public_context": {"context_id": [0] * 16}}},
 }
-context = setup_response["context"]
-public = setup_response["public"]
+public_context = setup_response["body"]["RepresentativeSetup"]["public_context"]
 
-# 2) Secret-only operations (explicit context dependency)
-ct_op = server.encrypt(
-    context=context,
-    payload=[7, 5],
-    budget_log2=20,
-)
-pt_op = server.decrypt(
-    context=context,
-    ciphertext={"limbs": [[0, 1]], "key_id": [0] * 16, "params_id": [9] * 16, "budget_log2": 20, "max_budget_log2": 20},
-)
+# In a real run, open a backend context first. Route methods execute directly
+# in eager mode and return Python-decoded responses.
+with backend_context(kernel, bearer_token=token):
+    setup_response = server.setup(
+        params={"moduli": [65521, 65537, 65543], "params_id": [9] * 16},
+        payload_dims=2,
+        nonce_dims=2,
+    )
+    public_context = setup_response["body"]["RepresentativeSetup"]["public_context"]
+    ciphertext = server.encrypt(
+        public_context=public_context,
+        payload=[7, 5],
+        shape=[2],
+        budget_log2=20,
+    )
+    sum_result = client.add(
+        public_context=public_context,
+        lhs_ciphertext=ciphertext["body"]["RepresentativeEncrypt"]["ciphertext"],
+        rhs_ciphertext=ciphertext["body"]["RepresentativeEncrypt"]["ciphertext"],
+    )
 
-# 3) Public evaluator operations (no CipherContext argument)
-sum_op = client.add(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
-prod_op = client.mul(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
-gemm_op = client.gemm(
-    metric=[3, 5],
-    lhs=[1.0, 2.0, 3.0, 4.0],
-    rhs=[5.0, 6.0, 7.0, 8.0],
-    lhs_rows=2,
-    lhs_cols=2,
-    rhs_cols=2,
+# Outside a backend context, the same calls return deferred route references.
+sum_op = client.add(
+    public_context=public_context,
+    lhs_ciphertext={"limbs": [[1, 2]], "shape": [2]},
+    rhs_ciphertext={"limbs": [[3, 4]], "shape": [2]},
 )
-
-# Execute with TinyChain when running in backend scope.
-sum_result = tc.execute(sum_op)
 ```
 
 ## Default configuration constants
@@ -158,9 +158,8 @@ pip install -e .
 ## Reproducible run (`a + b - c`)
 
 ```bash
-# 1) Install dependencies (editable)
-pip install "tinychain @ git+https://github.com/TinyChain-Inc/client.git#subdirectory=py"
-pip install -e .
+# 1) Install dependencies and run the local contract suite
+./scripts/bootstrap_and_test.sh
 
 # 2) Generate a local keypair (public key only is shared)
 ./scripts/generate_keypair.sh
@@ -232,6 +231,13 @@ the plaintext graph's opcodes or edges during execution. The current
 correctness-first scalar CKKS path is intentionally small and expensive because
 encrypted selector application consumes multiplicative depth.
 
+Known executable-program metadata leakage in V1 is explicit: node count,
+topological position, per-node tensor shape, input IDs, output IDs, and tensor
+dimensions are public so the executor can allocate and combine ciphertext
+tensors. Opcodes and graph edges are represented by encrypted tensors. The
+encrypted adjacency matrix is load-bearing in CKKS execution: operand selector
+weights are gated by the encrypted adjacency entries for the candidate edges.
+
 The client standardizes this representation as `EncryptedGraphProgram[T]`.
 CKKS uses `EncryptedGraphProgram[CKKSEncryptedTensor]`; the planned ILC upgrade
 will use `EncryptedGraphProgram[ILCEncryptedTensor]` with the same client-side
@@ -266,6 +272,12 @@ For ILC, the server boundary remains setup plus shaped `/chart/encrypt` and
 `/chart/decrypt`. Program encoding and executable-graph evaluation are client
 responsibilities.
 
+TFHE is intentionally not included in this PR. Its bit-level ciphertext model
+is a poor fit for this quantitative tensor benchmark, where CKKS-style
+approximate arithmetic evaluates real-valued matrix/tensor workloads directly.
+A second approximate or arithmetic FHE backend would be the right next
+portability check.
+
 Plaintext smoke benchmark:
 
 ```bash
@@ -287,10 +299,18 @@ python -m ilc.executable.benchmark \
   --output-format json
 ```
 
-CKKS encrypted-graph benchmark snapshot from local validation on 2026-06-19:
+`--repeat 1` is a smoke-test setting. Use a larger repeat count for reported
+benchmark numbers so setup/runtime noise is averaged. The default CKKS config
+uses scalar packing, `multiplicative_depth=5`, and `scaling_technique="openfhe-auto"`.
+That records the OpenFHE Python 1.5.x CKKS-RNS behavior validated here: leveled
+execution with OpenFHE-managed rescale/level alignment. To test deeper
+encrypted-selector circuits, construct `CKKSProvider(CKKSConfig(...))` with a
+larger depth budget in Python rather than relying on the CLI defaults.
+
+CKKS encrypted-graph benchmark snapshot from local validation on 2026-06-22:
 
 - Python: 3.12.3
-- OpenFHE Python: 1.5.1.0.24.4
+- OpenFHE Python: installed locally; package did not expose `__version__`
 - Provider: `ckks`
 - Benchmark repeat count: 1
 - Output validation: all listed workloads passed
@@ -299,10 +319,11 @@ CKKS encrypted-graph benchmark snapshot from local validation on 2026-06-19:
 
 | Workload | Encrypt s | Execute s | Decrypt s | Total s | Max abs error |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `mnist_linear_v1_b1` | 10.2417 | 48.1270 | 0.1185 | 58.4872 | 4.26e-13 |
+| `mnist_linear_v1_b1` | 20.1085 | 47.6719 | 0.1028 | 67.8832 | 3.09e-13 |
 
 This snapshot is not comparable to older public-schedule CKKS numbers because
-the current executor homomorphically applies encrypted graph selectors.
+the executor homomorphically applies encrypted graph selectors and encrypted
+adjacency gates.
 
 Generated JSON benchmark output is written to `benchmark-results/` when
 `--output-path` is used. That directory is intentionally ignored by Git; copy

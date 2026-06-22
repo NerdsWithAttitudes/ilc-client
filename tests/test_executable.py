@@ -20,7 +20,9 @@ from ilc.executable import (
     PlainTensor,
     ProgramNode,
     ProgramOp,
+    ShapeMismatchError,
     UnsupportedOperationError,
+    compare_outputs,
     encode_program,
     validate_encrypted_graph_program,
 )
@@ -51,7 +53,7 @@ def test_import_executable_does_not_import_openfhe() -> None:
 
 def test_plain_tensor_validates_shape_size() -> None:
     assert PlainTensor(values=(1.0, 2.0), shape=(2,)).values == (1.0, 2.0)
-    with pytest.raises(Exception):
+    with pytest.raises(ShapeMismatchError):
         PlainTensor(values=(1.0,), shape=(2,))
 
 
@@ -78,6 +80,19 @@ def test_plaintext_provider_runtime_add_mul_gemm() -> None:
 
 def test_plaintext_provider_satisfies_protocol() -> None:
     assert isinstance(PlaintextProvider(), ExecutableEncryptionProvider)
+
+
+def test_runtime_requires_provider_execute_program() -> None:
+    provider = PlaintextProvider()
+    program = WORKLOAD_REGISTRY["add_chain"].program
+    encrypted_program = provider.encrypt_program(program)
+    inputs = {
+        input_id: provider.encrypt_tensor(tensor)
+        for input_id, tensor in WORKLOAD_REGISTRY["add_chain"].plain_inputs.items()
+    }
+    provider.execute_program = None  # type: ignore[method-assign]
+    with pytest.raises(TypeError):
+        ExecutableGraphRuntime().execute(provider, program, encrypted_program, inputs)
 
 
 def test_program_encoding_contains_adjacency_opcode_and_selectors() -> None:
@@ -129,6 +144,22 @@ def test_run_benchmark_plaintext_schema() -> None:
     assert result[0].primitive_operation_count_estimate == {"ciphertext_add": 8, "ciphertext_mul": 0}
 
 
+def test_output_validation_mismatches_return_failed_result() -> None:
+    expected = {"out": PlainTensor((1.0, 2.0), (2,))}
+    assert not compare_outputs(
+        {"other": PlainTensor((1.0, 2.0), (2,))},
+        expected,
+        absolute_tolerance=0.0,
+        relative_tolerance=0.0,
+    ).passed
+    assert not compare_outputs(
+        {"out": PlainTensor((1.0, 2.0), (1, 2))},
+        expected,
+        absolute_tolerance=0.0,
+        relative_tolerance=0.0,
+    ).passed
+
+
 def test_benchmark_cli_plaintext_json() -> None:
     completed = subprocess.run(
         [
@@ -153,6 +184,17 @@ def test_benchmark_cli_plaintext_json() -> None:
     assert payload["results"][0]["provider_id"] == "plaintext"
 
 
+def test_executable_benchmark_smoke_defaults_to_ckks_mnist() -> None:
+    script = Path("scripts/executable_benchmark_smoke.sh").read_text(encoding="utf-8")
+    assert 'PROVIDER="${ILC_EXECUTABLE_PROVIDER:-ckks}"' in script
+    assert 'WORKLOAD="${ILC_EXECUTABLE_WORKLOAD:-mnist_linear_v1_b1}"' in script
+
+
+def test_generate_keypair_secures_secret_directory() -> None:
+    script = Path("scripts/generate_keypair.sh").read_text(encoding="utf-8")
+    assert 'chmod 700 "${OUT_DIR}"' in script
+
+
 def test_ckks_module_import_is_lazy() -> None:
     script = (
         "import sys, importlib; "
@@ -172,6 +214,53 @@ def test_ckks_provider_missing_dependency_or_depth_check() -> None:
     program = WORKLOAD_REGISTRY["mul_chain"].program
     with pytest.raises(DepthBudgetError):
         provider.validate_program(program)
+
+
+def test_ckks_encrypted_adjacency_is_load_bearing() -> None:
+    ckks = importlib.import_module("ilc.executable.providers.ckks")
+    try:
+        provider = ckks.CKKSProvider(ckks.CKKSConfig(multiplicative_depth=7))
+    except MissingDependencyError:
+        return
+    program = PlainProgram(
+        id="adjacency_add",
+        nodes=(
+            _input("a", (2,)),
+            _input("b", (2,)),
+            _op("sum", ProgramOp.ADD, ("a", "b"), (2,)),
+        ),
+        input_ids=("a", "b"),
+        output_ids=("sum",),
+    )
+    encrypted_program = provider.encrypt_program(program)
+    encrypted_tensors = dict(encrypted_program.encrypted_tensors)
+    encrypted_tensors["adjacency"] = provider.encrypt_tensor(
+        PlainTensor((0.0,) * 9, (3, 3))
+    )
+    corrupted_program = ckks.EncryptedGraphProgram(
+        provider_id=encrypted_program.provider_id,
+        session_id=encrypted_program.session_id,
+        program_id=encrypted_program.program_id,
+        node_ids=encrypted_program.node_ids,
+        input_ids=encrypted_program.input_ids,
+        output_ids=encrypted_program.output_ids,
+        node_shapes=encrypted_program.node_shapes,
+        encrypted_tensors=encrypted_tensors,
+    )
+    inputs = {
+        "a": provider.encrypt_tensor(PlainTensor((1.0, 2.0), (2,))),
+        "b": provider.encrypt_tensor(PlainTensor((3.0, 4.0), (2,))),
+    }
+    artifact = ExecutableGraphRuntime().execute(provider, program, corrupted_program, inputs)
+    actual = {"sum": provider.decrypt_tensor(artifact.outputs["sum"])}
+    expected = {"sum": PlainTensor((4.0, 6.0), (2,))}
+    result = compare_outputs(
+        actual,
+        expected,
+        absolute_tolerance=provider.absolute_tolerance,
+        relative_tolerance=provider.relative_tolerance,
+    )
+    assert not result.passed
 
 
 def test_ckks_benchmark_cli_skips_without_openfhe() -> None:
@@ -299,7 +388,7 @@ def test_ilc_provider_from_environment_installs_local_wasm(
 def test_ckks_provider_optional_integration() -> None:
     pytest.importorskip("openfhe")
     ckks = importlib.import_module("ilc.executable.providers.ckks")
-    provider = ckks.CKKSProvider(ckks.CKKSConfig(multiplicative_depth=4))
+    provider = ckks.CKKSProvider(ckks.CKKSConfig())
     program = PlainProgram(
         id="ckks_gemm_smoke",
         nodes=(

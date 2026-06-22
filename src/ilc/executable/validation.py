@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite
+from math import inf, isfinite
 from typing import Mapping
 
-from .errors import ToleranceExceededError
 from .program import PlainProgram, ProgramOp
 from .tensors import PlainTensor
 
@@ -44,7 +43,7 @@ def check_tolerance(
     relative_tolerance: float,
 ) -> ToleranceResult:
     if len(actual) != len(expected):
-        raise ToleranceExceededError("actual and expected output lengths differ")
+        return ToleranceResult(False, inf)
     max_error = 0.0
     for got, want in zip(actual, expected):
         err = abs(float(got) - float(want))
@@ -62,12 +61,12 @@ def compare_outputs(
     relative_tolerance: float,
 ) -> ToleranceResult:
     if set(actual) != set(expected):
-        raise ToleranceExceededError("actual and expected output ids differ")
+        return ToleranceResult(False, inf)
     passed = True
     max_error = 0.0
     for output_id in actual:
         if actual[output_id].shape != expected[output_id].shape:
-            raise ToleranceExceededError(f"output {output_id!r} shape mismatch")
+            return ToleranceResult(False, inf)
         result = check_tolerance(
             actual[output_id].values,
             expected[output_id].values,
@@ -77,4 +76,3 @@ def compare_outputs(
         passed = passed and result.passed
         max_error = max(max_error, result.max_absolute_error)
     return ToleranceResult(passed, max_error)
-

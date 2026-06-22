@@ -13,7 +13,6 @@ from tinychain.uri import URI
 
 from ilc import (
     AbcEvaluation,
-    CipherContext,
     DEFAULT_CLIENT_LIBRARY_ROOT,
     DEFAULT_CLIENT_WASM_PATH,
     DEFAULT_LOCAL_AUTHORITY,
@@ -129,40 +128,54 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(op.body["rhs_cols"], 2)
         self.assertNotIn("context", op.body)
 
-    def test_server_encrypt_includes_explicit_context(self) -> None:
+    def test_representative_mul_and_gemm_routes_use_ciphertext_contract(self) -> None:
+        client = ILCClient()
+        public_context = {"context_id": [4] * 16, "payload_dims": 2}
+        lhs = {"limbs": [[1, 2]], "shape": [2]}
+        rhs = {"limbs": [[3, 4]], "shape": [2]}
+        witness = {"limbs": [[0, 0]], "shape": [2]}
+
+        mul = client.mul(
+            public_context=public_context,
+            lhs_ciphertext=lhs,
+            rhs_ciphertext=rhs,
+            witness=witness,
+        )
+        gemm = client.gemm(
+            public_context=public_context,
+            lhs_ciphertext=lhs,
+            rhs_ciphertext=rhs,
+            witness=witness,
+        )
+
+        self.assertEqual(mul.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/exact/mul")
+        self.assertEqual(gemm.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/exact/gemm")
+        self.assertEqual(mul.body["public_context"], public_context)
+        self.assertEqual(mul.body["lhs_ciphertext"], lhs)
+        self.assertEqual(gemm.body["witness"], witness)
+
+    def test_server_encrypt_includes_explicit_public_context(self) -> None:
         server = ILCServer()
-        context: CipherContext = {
-            "version": 1,
-            "alg": "HS256",
-            "kid": None,
-            "payload_b64": "payload",
-            "signature_b64": "signature",
-        }
+        public_context = {"context_id": [1] * 16, "payload_dims": 3}
         op = server.encrypt(
-            context=context,
+            public_context=public_context,
             payload=[1, 2, 3],
             shape=[3, 1],
             budget_log2=20,
         )
         self.assertEqual(op.path, f"{DEFAULT_SERVER_LIBRARY_ROOT}/chart/encrypt")
-        self.assertEqual(op.body["context"]["alg"], "HS256")
+        self.assertEqual(op.body["public_context"], public_context)
         self.assertEqual(op.body["payload"], [1, 2, 3])
         self.assertEqual(op.body["shape"], [3, 1])
 
-    def test_secret_routes_require_context_while_eval_routes_do_not(self) -> None:
+    def test_secret_routes_require_public_context_while_eval_routes_do_not(self) -> None:
         server = ILCServer()
         client = ILCClient()
-        context: CipherContext = {
-            "version": 1,
-            "alg": "HS256",
-            "kid": "review",
-            "payload_b64": "payload",
-            "signature_b64": "signature",
-        }
+        public_context = {"context_id": [7] * 16, "payload_dims": 2}
 
-        encrypt_op = server.encrypt(context=context, payload=[7, 0], budget_log2=20)
-        self.assertIn("context", encrypt_op.body)
-        self.assertEqual(encrypt_op.body["context"]["kid"], "review")
+        encrypt_op = server.encrypt(public_context=public_context, payload=[7, 0], budget_log2=20)
+        self.assertIn("public_context", encrypt_op.body)
+        self.assertEqual(encrypt_op.body["public_context"], public_context)
 
         eval_op = client.add(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
         self.assertNotIn("context", eval_op.body)
@@ -170,19 +183,11 @@ class ContractTests(unittest.TestCase):
     def test_setup_response_context_can_be_passed_directly_to_encrypt(self) -> None:
         server = ILCServer()
         setup_response = {
-            "public": {"cipher_metric": [1, 2]},
-            "context": {
-                "version": 1,
-                "alg": "HS256",
-                "kid": None,
-                "payload_b64": "payload",
-                "signature_b64": "signature",
-            },
+            "body": {"RepresentativeSetup": {"public_context": {"context_id": [1] * 16}}},
         }
-        context: CipherContext = setup_response["context"]
-        op = server.encrypt(context=context, payload=[9, 0], budget_log2=20)
-        self.assertEqual(setup_response["public"]["cipher_metric"], [1, 2])
-        self.assertEqual(op.body["context"]["alg"], "HS256")
+        public_context = setup_response["body"]["RepresentativeSetup"]["public_context"]
+        op = server.encrypt(public_context=public_context, payload=[9, 0], budget_log2=20)
+        self.assertEqual(op.body["public_context"], public_context)
 
     def test_no_handle_classes_exported(self) -> None:
         import ilc

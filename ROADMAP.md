@@ -154,7 +154,7 @@ Client-side executable engineering procedure:
 2. Program encryption
 - `ILCProvider.encrypt_program` encodes `PlainProgram` locally.
 - It calls ordinary server `/chart/encrypt` for each program tensor using the
-  same `CipherContext` as input-data encryption.
+  same `public_context` as input-data encryption.
 - It returns an `EncryptedGraphProgram[ILCEncryptedTensor]` containing
   encrypted program tensors and public execution dimensions.
 - This is the same provider-neutral artifact shape used by CKKS as
@@ -172,13 +172,13 @@ Client-side executable engineering procedure:
   server API changes.
 
 4. Runtime dispatch
-- The public runtime dispatches to an optional `execute_program` provider
-  capability.
+- The public runtime requires a typed `execute_program` provider capability.
 - Use it for ILC patented executable-encryption benchmarks.
 - Fail closed when the ILC provider lacks client-side encrypted-program
   execution.
 - CKKS now encrypts the graph tensors and uses client-local provider-owned
-  encrypted-selector execution. Its scalar-packed V1 is a correctness and
+  encrypted-selector execution. Its encrypted adjacency tensor is load-bearing
+  in candidate edge routing. Its scalar-packed V1 is a correctness and
   benchmarking baseline, not an optimized SIMD implementation.
 - Plaintext remains the public-DAG reference baseline.
 

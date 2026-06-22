@@ -48,10 +48,8 @@ class ILCConfig:
     setup_params: dict[str, Any] = field(
         default_factory=lambda: {"moduli": [65521, 65537, 65543], "params_id": [9] * 16}
     )
-    secret_metric: tuple[int, ...] = (257, 263)
     payload_dims: int = 1
     nonce_dims: int = 1
-    nonce_bound: int = 16
 
     def __post_init__(self) -> None:
         if not isinstance(self.scale_bits, int) or self.scale_bits <= 0:
@@ -62,7 +60,6 @@ class ILCConfig:
                 raise ValueError(f"{name} must be a finite non-negative real")
             object.__setattr__(self, name, float(value))
         object.__setattr__(self, "metric", tuple(int(value) for value in self.metric))
-        object.__setattr__(self, "secret_metric", tuple(int(value) for value in self.secret_metric))
 
 
 @dataclass(frozen=True)
@@ -259,10 +256,8 @@ class ILCProvider:
         raw = self._execute(
             self._server.setup(
                 params=self._config.setup_params,
-                secret_metric=list(self._config.secret_metric),
                 payload_dims=self._config.payload_dims,
                 nonce_dims=self._config.nonce_dims,
-                nonce_bound=self._config.nonce_bound,
             )
         )
         if not isinstance(raw, dict) or not isinstance(raw.get("context"), dict):
@@ -276,10 +271,8 @@ class ILCProvider:
                 absolute_tolerance=self._config.absolute_tolerance,
                 metric=tuple(int(value) for value in public["cipher_metric"]),
                 setup_params=self._config.setup_params,
-                secret_metric=self._config.secret_metric,
                 payload_dims=self._config.payload_dims,
                 nonce_dims=self._config.nonce_dims,
-                nonce_bound=self._config.nonce_bound,
             )
 
     def _execute(self, op: Any) -> Any:

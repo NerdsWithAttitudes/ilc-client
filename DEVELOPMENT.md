@@ -123,6 +123,9 @@ public missing-dependency error when OpenFHE is unavailable:
   --output-format json
 ```
 
+Use `repeat=1` only as a smoke check. For reportable benchmark numbers, run a
+larger repeat count and archive the JSON/CSV output outside Git.
+
 ILC executable benchmark checks require the same live credentials and local
 WASM prerequisites as the ABC smoke:
 
@@ -131,9 +134,11 @@ WASM prerequisites as the ABC smoke:
 ./scripts/executable_benchmark_smoke.sh
 ```
 
-By default this runs `add_chain` with `provider=ilc`. Override with
+By default this runs `mnist_linear_v1_b1` with `provider=ckks`, because CKKS is
+the implemented executable-encryption backend. Override with
 `ILC_EXECUTABLE_WORKLOAD`, `ILC_EXECUTABLE_PROVIDER`, or
-`ILC_EXECUTABLE_REPEAT`.
+`ILC_EXECUTABLE_REPEAT`. The ILC executable provider remains fail-closed until
+local encrypted selector scaling is implemented.
 
 ## Scope reminder
 

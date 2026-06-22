@@ -28,13 +28,14 @@ from ._helpers import gemm_shape, validate_pair, validate_tensor
 class CKKSConfig:
     """Public CKKS configuration for correctness-first scalar packing."""
 
-    multiplicative_depth: int = 4
+    multiplicative_depth: int = 5
     scaling_mod_size: int = 50
     first_mod_size: int = 60
     relative_tolerance: float = 1e-3
     absolute_tolerance: float = 1e-6
     packing: str = "scalar"
     ring_dimension: int | None = None
+    scaling_technique: str = "openfhe-auto"
 
     def __post_init__(self) -> None:
         for name in ("multiplicative_depth", "scaling_mod_size", "first_mod_size"):
@@ -48,6 +49,8 @@ class CKKSConfig:
             object.__setattr__(self, name, float(value))
         if self.packing != "scalar":
             raise ValueError("only scalar CKKS packing is supported in V1")
+        if not isinstance(self.scaling_technique, str) or not self.scaling_technique:
+            raise ValueError("scaling_technique must be a non-empty string")
         if self.ring_dimension is not None and (
             not isinstance(self.ring_dimension, int)
             or isinstance(self.ring_dimension, bool)
@@ -262,6 +265,10 @@ class CKKSProvider:
             params = self._openfhe.CCParamsCKKSRNS()
             params.SetMultiplicativeDepth(config.multiplicative_depth)
             params.SetScalingModSize(config.scaling_mod_size)
+            if config.scaling_technique != "openfhe-auto":
+                if not hasattr(params, "SetScalingTechnique"):
+                    raise ProviderConfigurationError("OpenFHE binding does not expose SetScalingTechnique")
+                params.SetScalingTechnique(_scaling_technique(self._openfhe, config.scaling_technique))
             if hasattr(params, "SetFirstModSize"):
                 params.SetFirstModSize(config.first_mod_size)
             if hasattr(params, "SetBatchSize"):
@@ -506,12 +513,28 @@ class CKKSProvider:
     ) -> tuple[Any, int]:
         lhs_selector, lhs_depth = self._program_scalar(encrypted_program, "lhs_selector", node_index, lhs_index)
         rhs_selector, rhs_depth = self._program_scalar(encrypted_program, "rhs_selector", node_index, rhs_index)
-        return self._multiply_ciphertexts(
+        selector_pair, selector_depth = self._multiply_ciphertexts(
             lhs_selector,
             lhs_depth,
             rhs_selector,
             rhs_depth,
             "execute_program selector",
+        )
+        lhs_edge, lhs_edge_depth = self._program_scalar(encrypted_program, "adjacency", lhs_index, node_index)
+        rhs_edge, rhs_edge_depth = self._program_scalar(encrypted_program, "adjacency", rhs_index, node_index)
+        adjacency_pair, adjacency_depth = self._multiply_ciphertexts(
+            lhs_edge,
+            lhs_edge_depth,
+            rhs_edge,
+            rhs_edge_depth,
+            "execute_program adjacency",
+        )
+        return self._multiply_ciphertexts(
+            selector_pair,
+            selector_depth,
+            adjacency_pair,
+            adjacency_depth,
+            "execute_program adjacency selector",
         )
 
     def _encrypted_output(
@@ -664,6 +687,16 @@ def _feature(openfhe: Any, name: str) -> Any:
     return getattr(openfhe, name)
 
 
+def _scaling_technique(openfhe: Any, name: str) -> Any:
+    normalized = name.replace("-", "_").upper()
+    enum = getattr(openfhe, "ScalingTechnique", None)
+    if enum is not None and hasattr(enum, normalized):
+        return getattr(enum, normalized)
+    if hasattr(openfhe, normalized):
+        return getattr(openfhe, normalized)
+    raise ProviderConfigurationError(f"OpenFHE scaling technique {name!r} is unavailable")
+
+
 def _fingerprint_payload(config: CKKSConfig) -> dict[str, object]:
     return {
         "provider_id": "ckks",
@@ -674,6 +707,7 @@ def _fingerprint_payload(config: CKKSConfig) -> dict[str, object]:
         "absolute_tolerance": config.absolute_tolerance,
         "packing": config.packing,
         "ring_dimension": config.ring_dimension,
+        "scaling_technique": config.scaling_technique,
     }
 
 
@@ -697,5 +731,5 @@ def _required_encrypted_graph_depth(program: PlainProgram) -> int:
         candidate_depth = max(lhs_depth, rhs_depth)
         if node.op in (ProgramOp.MUL, ProgramOp.GEMM):
             candidate_depth += 1
-        depths[node.id] = max(2, candidate_depth) + 1
+        depths[node.id] = max(3, candidate_depth) + 1
     return max(depths[output_id] + 1 for output_id in program.output_ids)

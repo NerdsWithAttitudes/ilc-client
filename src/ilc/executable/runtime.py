@@ -6,8 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from .errors import ProgramValidationError, ShapeMismatchError
-from .program import EncryptedProgram, PlainProgram, ProgramOp
+from .errors import ProgramValidationError
+from .program import EncryptedProgram, PlainProgram
 from .protocol import ExecutableEncryptionProvider
 from .tensors import EncryptedTensor
 
@@ -53,50 +53,20 @@ class ExecutableGraphRuntime:
         *,
         validate_program: bool = True,
     ) -> ExecutionArtifact:
-        native_execute = getattr(provider, "execute_program", None)
-        if callable(native_execute):
-            self._validate_encrypted_program(provider, program, encrypted_program)
-            outputs = native_execute(encrypted_program, inputs)
-            return ExecutionArtifact.create(
-                program_id=encrypted_program.program_id,
-                provider_id=provider.provider_id,
-                session_id=provider.session.session_id,
-                representation_type=encrypted_program.representation_type,
-                outputs=outputs,
-            )
-
         if validate_program:
             program.revalidate()
             provider.validate_program(program)
         self._validate_encrypted_program(provider, program, encrypted_program)
         self._validate_inputs(provider, program, inputs)
-
-        values: dict[str, EncryptedTensor] = dict(inputs)
-        for node in program.nodes:
-            if node.op == ProgramOp.INPUT:
-                continue
-            lhs = values[node.inputs[0]]
-            rhs = values[node.inputs[1]]
-            if node.op == ProgramOp.ADD:
-                result = provider.add(lhs, rhs)
-            elif node.op == ProgramOp.MUL:
-                result = provider.mul(lhs, rhs)
-            elif node.op == ProgramOp.GEMM:
-                result = provider.gemm(lhs, rhs)
-            else:
-                raise ProgramValidationError(f"unsupported operation {node.op!r}")
-            if result.shape != node.output_shape:
-                raise ShapeMismatchError(
-                    f"node {node.id!r}: expected shape {node.output_shape}, got {result.shape}"
-                )
-            values[node.id] = result
+        outputs = provider.execute_program(encrypted_program, inputs)
+        self._validate_outputs(provider, program, outputs)
 
         return ExecutionArtifact.create(
-            program_id=program.id,
+            program_id=encrypted_program.program_id,
             provider_id=provider.provider_id,
             session_id=provider.session.session_id,
             representation_type=encrypted_program.representation_type,
-            outputs={output_id: values[output_id] for output_id in program.output_ids},
+            outputs=outputs,
         )
 
     @staticmethod
@@ -131,3 +101,21 @@ class ExecutableGraphRuntime:
                 raise ProgramValidationError(f"input {input_id!r} session mismatch")
             if tensor.shape != shapes[input_id]:
                 raise ProgramValidationError(f"input {input_id!r} shape mismatch")
+
+    @staticmethod
+    def _validate_outputs(
+        provider: ExecutableEncryptionProvider,
+        program: PlainProgram,
+        outputs: Mapping[str, EncryptedTensor],
+    ) -> None:
+        expected = set(program.output_ids)
+        if set(outputs) != expected:
+            raise ProgramValidationError(f"output ids mismatch: expected {expected!r}, got {set(outputs)!r}")
+        shapes = {node.id: node.output_shape for node in program.nodes}
+        for output_id, tensor in outputs.items():
+            if tensor.provider_id != provider.provider_id:
+                raise ProgramValidationError(f"output {output_id!r} provider mismatch")
+            if tensor.session_id != provider.session.session_id:
+                raise ProgramValidationError(f"output {output_id!r} session mismatch")
+            if tensor.shape != shapes[output_id]:
+                raise ProgramValidationError(f"output {output_id!r} shape mismatch")
