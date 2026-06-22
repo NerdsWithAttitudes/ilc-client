@@ -9,7 +9,7 @@ SERVER="${ILC_INTEGRATION_SERVER:-}"
 TOKEN="${TC_BEARER_TOKEN:-}"
 INSTALL_TOKEN="${TC_INSTALL_BEARER_TOKEN:-$TOKEN}"
 PUBKEY="${TC_PUBLIC_KEY_B64:-}"
-TOKEN_HOST="${TC_TOKEN_HOST:-/lib/applied-physics/ilc/0.1.0}"
+TOKEN_HOST="${TC_TOKEN_HOST:-/lib/applied-physics/ilc_server/0.1.0}"
 WASM_SHA256="${ILC_CLIENT_WASM_SHA256:-}"
 
 if [[ -z "$SERVER" ]]; then

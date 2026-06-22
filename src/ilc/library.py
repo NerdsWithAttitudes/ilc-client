@@ -2,22 +2,28 @@ from __future__ import annotations
 
 from typing import Any, TypeAlias, TypedDict
 
-import tinychain as tc
+import tinychain.executor as tc_executor
 from tinychain.library import Library
+from tinychain.opref import OpRef, get as op_get, post as op_post
 from tinychain.uri import URI
 
 from .config import (
-    CLIENT_NAME,
     DEFAULT_LOCAL_AUTHORITY,
     DEFAULT_SERVER_AUTHORITY,
     DEFAULT_SERVER_LIBRARY_ROOT,
     DEFAULT_VERSION,
     PUBLISHER,
-    SERVER_NAME,
 )
 
 Metric: TypeAlias = list[int]
 Ciphertext: TypeAlias = list[float]
+
+
+def _maybe_execute(op: OpRef) -> object:
+    executor = tc_executor.try_current()
+    if executor is not None and executor.is_eager():
+        return executor.execute(op)
+    return op
 
 
 class CipherContext(TypedDict):
@@ -34,7 +40,6 @@ class ILCServer(Library):
     """Remote ILC server wrapper for authenticated encrypt/decrypt routes."""
 
     publisher = PUBLISHER
-    name = SERVER_NAME
     version = DEFAULT_VERSION
     authority = URI.parse(DEFAULT_SERVER_AUTHORITY)
 
@@ -42,8 +47,8 @@ class ILCServer(Library):
     def route_root(self) -> str:
         return self.id().path
 
-    def _post(self, path: str, body: dict[str, Any]) -> tc.OpRef:
-        return tc.OpRef("POST", f"{self.route_root}{path}", body=body)
+    def _post(self, path: str, body: dict[str, Any]) -> object:
+        return _maybe_execute(op_post(f"{self.route_root}{path}", body=body))
 
     def setup(
         self,
@@ -54,7 +59,7 @@ class ILCServer(Library):
         nonce_dims: int,
         nonce_bound: int,
         salt_hex: str | None = None,
-    ) -> tc.OpRef:
+    ) -> object:
         return self._post(
             "/setup",
             {
@@ -73,7 +78,7 @@ class ILCServer(Library):
         context: CipherContext,
         payload: list[int],
         budget_log2: int | None = None,
-    ) -> tc.OpRef:
+    ) -> object:
         body: dict[str, object] = {
             "context": context,
             "payload": payload,
@@ -87,7 +92,7 @@ class ILCServer(Library):
         *,
         context: CipherContext,
         ciphertext: dict[str, Any],
-    ) -> tc.OpRef:
+    ) -> object:
         return self._post(
             "/decrypt",
             {
@@ -101,26 +106,54 @@ class ILCClient(Library):
     """Local ILC evaluator wrapper for ciphertext-domain add/mul/gemm routes."""
 
     publisher = PUBLISHER
-    name = CLIENT_NAME
     version = DEFAULT_VERSION
     authority = URI.parse(DEFAULT_LOCAL_AUTHORITY)
     dependencies = (URI.parse(DEFAULT_SERVER_LIBRARY_ROOT),)
+
+    def bind_server(
+        self,
+        server: ILCServer | URI | str | None = None,
+    ) -> "ILCClient":
+        if server is None:
+            self.server = ILCServer()
+        elif isinstance(server, ILCServer):
+            self.server = server
+        elif isinstance(server, URI):
+            self.server = ILCServer(authority=server)
+        else:
+            self.server = ILCServer(authority=URI.parse(server))
+        return self
 
     @property
     def route_root(self) -> str:
         return self.id().path
 
-    def _get(self, path: str, body: dict[str, Any]) -> tc.OpRef:
-        return tc.OpRef("GET", f"{self.route_root}{path}", body=body)
+    def _get(self, path: str, body: dict[str, Any]) -> object:
+        return _maybe_execute(op_get(f"{self.route_root}{path}", body=body))
 
     def add(
         self,
         *,
-        metric: Metric,
-        lhs: Ciphertext,
-        rhs: Ciphertext,
-    ) -> tc.OpRef:
-        return self._get("/add", {"metric": metric, "lhs": lhs, "rhs": rhs})
+        metric: Metric | None = None,
+        lhs: Ciphertext | None = None,
+        rhs: Ciphertext | None = None,
+        public_context: dict[str, Any] | None = None,
+        lhs_ciphertext: dict[str, Any] | None = None,
+        rhs_ciphertext: dict[str, Any] | None = None,
+    ) -> object:
+        if public_context is not None or lhs_ciphertext is not None or rhs_ciphertext is not None:
+            return self._get(
+                "/chart/add",
+                {
+                    "public_context": public_context,
+                    "lhs_ciphertext": lhs_ciphertext,
+                    "rhs_ciphertext": rhs_ciphertext,
+                },
+            )
+        return self._get(
+            "/chart/add",
+            {"metric": metric or [], "lhs": lhs or [], "rhs": rhs or []},
+        )
 
     def mul(
         self,
@@ -128,8 +161,8 @@ class ILCClient(Library):
         metric: Metric,
         lhs: Ciphertext,
         rhs: Ciphertext,
-    ) -> tc.OpRef:
-        return self._get("/mul", {"metric": metric, "lhs": lhs, "rhs": rhs})
+    ) -> object:
+        return self._get("/chart/exact/mul", {"metric": metric, "lhs": lhs, "rhs": rhs})
 
     def gemm(
         self,
@@ -140,9 +173,9 @@ class ILCClient(Library):
         lhs_rows: int,
         lhs_cols: int,
         rhs_cols: int,
-    ) -> tc.OpRef:
+    ) -> object:
         return self._get(
-            "/gemm",
+            "/chart/exact/gemm",
             {
                 "metric": metric,
                 "lhs": lhs,

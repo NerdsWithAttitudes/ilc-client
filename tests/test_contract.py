@@ -56,11 +56,11 @@ class ContractTests(unittest.TestCase):
 
         self.assertEqual(
             str(client.link()),
-            "http://127.0.0.1:4100/lib/applied-physics/ilc-client/0.1.0",
+            f"http://127.0.0.1:4100{DEFAULT_CLIENT_LIBRARY_ROOT}",
         )
         self.assertEqual(
             str(server.link()),
-            "https://example.test/lib/applied-physics/ilc/0.1.0",
+            f"https://example.test{DEFAULT_SERVER_LIBRARY_ROOT}",
         )
 
     def test_wasm_install_requires_binary_path(self) -> None:
@@ -108,24 +108,22 @@ class ContractTests(unittest.TestCase):
 
     def test_deferred_add_accepts_negated_rhs_for_subtraction_flow(self) -> None:
         client = ILCClient()
-        with tc.backend(auto_execute=False):
-            op = client.add(metric=[3, 5], lhs=[10.0, 0.0], rhs=[-3.0, 0.0])
-        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/add")
+        op = client.add(metric=[3, 5], lhs=[10.0, 0.0], rhs=[-3.0, 0.0])
+        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/add")
         self.assertEqual(op.body["rhs"], [-3.0, 0.0])
         self.assertNotIn("context", op.body)
 
     def test_deferred_gemm_route_shape_and_params(self) -> None:
         client = ILCClient()
-        with tc.backend(auto_execute=False):
-            op = client.gemm(
-                metric=[3, 5],
-                lhs=[1.0, 2.0, 3.0, 4.0],
-                rhs=[5.0, 6.0, 7.0, 8.0],
-                lhs_rows=2,
-                lhs_cols=2,
-                rhs_cols=2,
-            )
-        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/gemm")
+        op = client.gemm(
+            metric=[3, 5],
+            lhs=[1.0, 2.0, 3.0, 4.0],
+            rhs=[5.0, 6.0, 7.0, 8.0],
+            lhs_rows=2,
+            lhs_cols=2,
+            rhs_cols=2,
+        )
+        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/exact/gemm")
         self.assertEqual(op.body["lhs_rows"], 2)
         self.assertEqual(op.body["lhs_cols"], 2)
         self.assertEqual(op.body["rhs_cols"], 2)
@@ -164,8 +162,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn("context", encrypt_op.body)
         self.assertEqual(encrypt_op.body["context"]["kid"], "review")
 
-        with tc.backend(auto_execute=False):
-            eval_op = client.add(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
+        eval_op = client.add(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
         self.assertNotIn("context", eval_op.body)
 
     def test_setup_response_context_can_be_passed_directly_to_encrypt(self) -> None:
@@ -196,11 +193,17 @@ class ContractTests(unittest.TestCase):
         with patch.object(
             ILCClient,
             "add",
-            side_effect=["op-add-ab", "op-add-neg-c"],
+            side_effect=[
+                tc.opref.get("/test/add-ab"),
+                tc.opref.get("/test/add-neg-c"),
+            ],
         ), patch.object(
             tc,
             "execute",
-            side_effect=[{"result": [12.0, 0.0]}, {"result": [9.0, 0.0]}],
+            side_effect=[
+                {"ciphertext": {"limbs": [[12.0, 0.0]], "shape": [2]}},
+                {"ciphertext": {"limbs": [[9.0, 0.0]], "shape": [2]}},
+            ],
         ) as execute_mock:
             result = evaluate_abc(client=client, a=7, b=5, c=3)
 

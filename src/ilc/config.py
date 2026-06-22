@@ -7,8 +7,8 @@ from pathlib import Path
 # Package/version defaults
 DEFAULT_VERSION = "0.1.0"
 PUBLISHER = "applied-physics"
-CLIENT_NAME = "ilc-client"
-SERVER_NAME = "ilc"
+CLIENT_NAME = "ilc_client"
+SERVER_NAME = "ilc_server"
 
 # Common authorities
 ENV_ILC_LOCAL_AUTHORITY = "ILC_LOCAL_AUTHORITY"
