@@ -39,7 +39,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(client.id().path, DEFAULT_CLIENT_LIBRARY_ROOT)
         self.assertEqual(
             [dep.path for dep in client.dependencies],
-            [DEFAULT_SERVER_LIBRARY_ROOT],
+            [],
         )
         self.assertEqual(
             str(client.link()),

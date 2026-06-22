@@ -49,6 +49,9 @@ git clone --depth 1 https://github.com/TinyChain-Inc/tc-server.git "$TMP_DIR/tc-
 git clone --depth 1 https://github.com/TinyChain-Inc/tc-ir.git "$TMP_DIR/tc-ir"
 git clone --depth 1 https://github.com/TinyChain-Inc/tc-state.git "$TMP_DIR/tc-state"
 git clone --depth 1 https://github.com/TinyChain-Inc/tc-value.git "$TMP_DIR/tc-value"
+mkdir -p "$TMP_DIR/deps"
+git clone --depth 1 https://github.com/TinyChain-Inc/pathlink.git "$TMP_DIR/deps/pathlink"
+git clone --depth 1 https://github.com/TinyChain-Inc/rjwt.git "$TMP_DIR/deps/rjwt"
 
 (
   cd "$TMP_DIR/client/rust"
