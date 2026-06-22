@@ -26,7 +26,7 @@ from ...config import (
     ENV_TC_PUBLIC_KEY_B64,
     ENV_TC_TOKEN_HOST,
 )
-from ...library import CipherContext, ILCClient, ILCServer
+from ...library import ILCClient, ILCServer
 from ...runtime import build_local_kernel, wasm_install
 from ..errors import (
     ProviderConfigurationError,
@@ -36,7 +36,7 @@ from ..encoding import EncryptedGraphProgram, encode_program, validate_encrypted
 from ..program import PlainProgram
 from ..session import BasicSession, compute_fingerprint
 from ..tensors import PlainTensor
-from ._helpers import gemm_shape, validate_pair, validate_tensor
+from ._helpers import validate_pair, validate_tensor
 
 
 @dataclass(frozen=True)
@@ -82,14 +82,14 @@ class ILCProvider:
         *,
         server: ILCServer | None = None,
         client: ILCClient | None = None,
-        context: CipherContext | None = None,
+        public_context: dict[str, Any] | None = None,
         bearer_token: str | None = None,
         kernel: Any | None = None,
     ) -> None:
         self._config = config or ILCConfig()
         self._server = server or ILCServer()
         self._client = client or ILCClient()
-        self._context = context
+        self._public_context = public_context
         self._bearer_token = bearer_token
         self._kernel = kernel
         self._session = BasicSession(
@@ -107,6 +107,9 @@ class ILCProvider:
         public_key = os.environ.get(ENV_TC_PUBLIC_KEY_B64)
         if not public_key:
             raise ProviderConfigurationError(f"ILCProvider requires {ENV_TC_PUBLIC_KEY_B64} for local WASM execution")
+        actor_id = os.environ.get(ENV_TC_ACTOR_ID)
+        if not actor_id:
+            raise ProviderConfigurationError(f"ILCProvider requires {ENV_TC_ACTOR_ID} for Falcon-512 token verification")
 
         server_authority = os.environ.get("ILC_INTEGRATION_SERVER") or os.environ.get(ENV_ILC_SERVER_AUTHORITY)
         local_authority = os.environ.get(ENV_ILC_LOCAL_AUTHORITY)
@@ -118,11 +121,12 @@ class ILCProvider:
         client = ILCClient(authority=URI.parse(local_authority)) if local_authority else ILCClient()
         data_dir = Path(os.environ.get("ILC_EXECUTABLE_DATA_DIR", ".ilc-executable"))
         data_dir.mkdir(parents=True, exist_ok=True)
+        token_host = os.environ.get(ENV_TC_TOKEN_HOST, DEFAULT_SERVER_LIBRARY_ROOT)
         kernel = build_local_kernel(
             client,
             data_dir=data_dir,
-            token_host=os.environ.get(ENV_TC_TOKEN_HOST, DEFAULT_SERVER_LIBRARY_ROOT),
-            actor_id=os.environ.get(ENV_TC_ACTOR_ID),
+            token_host=token_host,
+            actor_id=actor_id,
             public_key_b64=public_key,
         )
         install = wasm_install(
@@ -132,6 +136,9 @@ class ILCProvider:
             expected_sha256=os.environ.get(ENV_ILC_CLIENT_WASM_SHA256),
             kernel=kernel,
             data_dir=data_dir,
+            token_host=token_host,
+            actor_id=actor_id,
+            public_key_b64=public_key,
         )
         if getattr(install, "status", None) not in (None, 200, 201, 204):
             raise ProviderConfigurationError(f"ILC WASM install failed with status {getattr(install, 'status', None)}")
@@ -157,11 +164,11 @@ class ILCProvider:
         program.revalidate()
 
     def encrypt_tensor(self, tensor: PlainTensor) -> ILCEncryptedTensor:
-        self._ensure_context()
+        self._ensure_public_context()
         scaled = [int(round(value * (1 << self._config.scale_bits))) for value in tensor.values]
         payload = self._execute(
             self._server.encrypt(
-                context=self._context,
+                public_context=self._public_context_or_raise(),
                 payload=scaled,
                 shape=list(tensor.shape),
                 budget_log2=self._config.scale_bits,
@@ -218,8 +225,14 @@ class ILCProvider:
 
     def decrypt_tensor(self, tensor: ILCEncryptedTensor) -> PlainTensor:
         tensor = self._validate_tensor(tensor, "decrypt_tensor")
-        self._ensure_context()
-        raw = self._execute(self._server.decrypt(context=self._context, ciphertext=_ciphertext_dict(tensor._payload)))
+        self._ensure_public_context()
+        raw = self._execute(
+            self._server.decrypt(
+                public_context=self._public_context_or_raise(),
+                ciphertext=_ciphertext_dict(tensor._payload),
+                handle=_handle_dict(tensor._payload),
+            )
+        )
         values = _values_from_decrypt(raw)
         scale = float(1 << self._config.scale_bits)
         expected = prod(tensor.shape)
@@ -227,31 +240,32 @@ class ILCProvider:
 
     def add(self, lhs: ILCEncryptedTensor, rhs: ILCEncryptedTensor) -> ILCEncryptedTensor:
         lhs, rhs = self._validate_pair(lhs, rhs, "add", same_shape=True)
-        payload = self._execute(self._client.add(metric=list(self._config.metric), lhs=_body(lhs), rhs=_body(rhs)))
+        self._ensure_public_context()
+        payload = self._execute(
+            self._client.add(
+                public_context=self._public_context_or_raise(),
+                lhs_ciphertext=_ciphertext_dict(lhs._payload),
+                rhs_ciphertext=_ciphertext_dict(rhs._payload),
+            )
+        )
         return ILCEncryptedTensor(self._session.session_id, lhs.shape, payload)
 
     def mul(self, lhs: ILCEncryptedTensor, rhs: ILCEncryptedTensor) -> ILCEncryptedTensor:
-        lhs, rhs = self._validate_pair(lhs, rhs, "mul", same_shape=True)
-        payload = self._execute(self._client.mul(metric=list(self._config.metric), lhs=_body(lhs), rhs=_body(rhs)))
-        return ILCEncryptedTensor(self._session.session_id, lhs.shape, payload)
+        self._validate_pair(lhs, rhs, "mul", same_shape=True)
+        raise UnsupportedOperationError(
+            "ILCProvider.mul requires a planned representative witness or a local selector-scaling primitive; "
+            "the executable provider uses representative ciphertext contracts only."
+        )
 
     def gemm(self, lhs: ILCEncryptedTensor, rhs: ILCEncryptedTensor) -> ILCEncryptedTensor:
-        lhs, rhs = self._validate_pair(lhs, rhs, "gemm", same_shape=False)
-        rows, shared, cols = gemm_shape(lhs.shape, rhs.shape)
-        payload = self._execute(
-            self._client.gemm(
-                metric=list(self._config.metric),
-                lhs=_body(lhs),
-                rhs=_body(rhs),
-                lhs_rows=rows,
-                lhs_cols=shared,
-                rhs_cols=cols,
-            )
+        self._validate_pair(lhs, rhs, "gemm", same_shape=False)
+        raise UnsupportedOperationError(
+            "ILCProvider.gemm requires a planned representative witness or a local selector-scaling primitive; "
+            "the executable provider uses representative ciphertext contracts only."
         )
-        return ILCEncryptedTensor(self._session.session_id, (rows, cols), payload)
 
-    def _ensure_context(self) -> None:
-        if self._context is not None:
+    def _ensure_public_context(self) -> None:
+        if self._public_context is not None:
             return
         raw = self._execute(
             self._server.setup(
@@ -260,20 +274,25 @@ class ILCProvider:
                 nonce_dims=self._config.nonce_dims,
             )
         )
-        if not isinstance(raw, dict) or not isinstance(raw.get("context"), dict):
-            raise ProviderConfigurationError("ILC setup response did not include context")
-        self._context = raw["context"]
-        public = raw.get("public")
-        if isinstance(public, dict) and isinstance(public.get("cipher_metric"), list):
+        public_context = _setup_public_context(raw)
+        if public_context is None:
+            raise ProviderConfigurationError("ILC setup response did not include public_context")
+        self._public_context = public_context
+        if isinstance(public_context.get("cipher_metric"), list):
             self._config = ILCConfig(
                 scale_bits=self._config.scale_bits,
                 relative_tolerance=self._config.relative_tolerance,
                 absolute_tolerance=self._config.absolute_tolerance,
-                metric=tuple(int(value) for value in public["cipher_metric"]),
+                metric=tuple(int(value) for value in public_context["cipher_metric"]),
                 setup_params=self._config.setup_params,
                 payload_dims=self._config.payload_dims,
                 nonce_dims=self._config.nonce_dims,
             )
+
+    def _public_context_or_raise(self) -> dict[str, Any]:
+        if self._public_context is None:
+            raise ProviderConfigurationError("ILC provider has no public_context")
+        return self._public_context
 
     def _execute(self, op: Any) -> Any:
         try:
@@ -318,24 +337,54 @@ def _ciphertext_dict(payload: Any) -> dict[str, Any]:
     if hasattr(payload, "to_dict"):
         return payload.to_dict()
     if isinstance(payload, dict):
+        body = payload.get("body")
+        if isinstance(body, dict):
+            encrypted = body.get("RepresentativeEncrypt")
+            if isinstance(encrypted, dict) and isinstance(encrypted.get("ciphertext"), dict):
+                return encrypted["ciphertext"]
+            added = body.get("RepresentativeAdd")
+            if isinstance(added, dict) and isinstance(added.get("ciphertext"), dict):
+                return added["ciphertext"]
         return payload
     raise ProviderConfigurationError("ILC ciphertext payload is not serializable")
 
 
-def _body(tensor: ILCEncryptedTensor) -> list[float]:
-    if hasattr(tensor._payload, "_plain"):
-        return list(tensor._payload._plain.values)
-    payload = _ciphertext_dict(tensor._payload)
-    limbs = payload.get("limbs")
-    if isinstance(limbs, list) and limbs:
-        return [float(value) for value in limbs[0]]
-    if isinstance(payload.get("result"), list):
-        return [float(value) for value in payload["result"]]
-    raise ProviderConfigurationError("ILC ciphertext payload has no public evaluator body")
+def _handle_dict(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, dict):
+        body = payload.get("body")
+        if isinstance(body, dict):
+            encrypted = body.get("RepresentativeEncrypt")
+            if isinstance(encrypted, dict) and isinstance(encrypted.get("handle"), dict):
+                return encrypted["handle"]
+        handle = payload.get("handle")
+        if isinstance(handle, dict):
+            return handle
+    raise ProviderConfigurationError("ILC ciphertext payload has no decrypt handle")
+
+
+def _setup_public_context(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    if isinstance(raw.get("public_context"), dict):
+        return raw["public_context"]
+    body = raw.get("body")
+    if isinstance(body, dict):
+        setup = body.get("RepresentativeSetup")
+        if isinstance(setup, dict) and isinstance(setup.get("public_context"), dict):
+            return setup["public_context"]
+    setup = raw.get("RepresentativeSetup")
+    if isinstance(setup, dict) and isinstance(setup.get("public_context"), dict):
+        return setup["public_context"]
+    return None
 
 
 def _values_from_decrypt(raw: Any) -> list[float | int]:
     if isinstance(raw, dict):
+        body = raw.get("body")
+        if isinstance(body, dict):
+            decrypted = body.get("RepresentativeDecrypt")
+            if isinstance(decrypted, dict) and isinstance(decrypted.get("values"), list):
+                return decrypted["values"]
         payload = raw.get("payload", raw)
         if isinstance(payload, dict) and isinstance(payload.get("values"), list):
             return payload["values"]

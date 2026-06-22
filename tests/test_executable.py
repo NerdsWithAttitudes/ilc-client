@@ -297,19 +297,26 @@ def test_ilc_provider_uses_public_routes(monkeypatch: pytest.MonkeyPatch) -> Non
         calls.append((op.method, op.path, dict(op.body)))
         if op.path.endswith("/chart/setup"):
             return {
-                "context": {
-                    "version": 1,
-                    "alg": "HS256",
-                    "kid": None,
-                    "payload_b64": "payload",
-                    "signature_b64": "signature",
-                },
-                "public": {"cipher_metric": [3, 5]},
+                "body": {
+                    "RepresentativeSetup": {
+                        "public_context": {
+                            "context_id": [0] * 16,
+                            "cipher_metric": [3, 5],
+                        }
+                    }
+                }
             }
         if op.path.endswith("/chart/encrypt"):
-            return {"limbs": [[1.0, 2.0]], "key_id": [0] * 16, "params_id": [9] * 16}
+            return {
+                "body": {
+                    "RepresentativeEncrypt": {
+                        "ciphertext": {"limbs": [[1.0, 2.0]], "shape": [2]},
+                        "handle": {"id": [1] * 16},
+                    }
+                }
+            }
         if op.path.endswith("/chart/decrypt"):
-            return {"values": [16, 32]}
+            return {"body": {"RepresentativeDecrypt": {"values": [16, 32]}}}
         if op.path.endswith("/chart/add"):
             return {"result": [3.0, 4.0]}
         raise AssertionError(f"unexpected op {op.path}")
@@ -354,6 +361,8 @@ def test_ilc_provider_from_environment_installs_local_wasm(
     monkeypatch.setenv("TC_BEARER_TOKEN", "server-token")
     monkeypatch.setenv("TC_INSTALL_BEARER_TOKEN", "install-token")
     monkeypatch.setenv("TC_PUBLIC_KEY_B64", "public-key")
+    monkeypatch.setenv("TC_ACTOR_ID", "ci-test")
+    monkeypatch.setenv("TC_TOKEN_HOST", "/lib/applied-physics/ilc_server/0.1.0")
     monkeypatch.setenv("ILC_WASM_PATH", str(wasm_path))
     monkeypatch.setenv("ILC_EXECUTABLE_DATA_DIR", str(data_dir))
     monkeypatch.setenv("ILC_INTEGRATION_SERVER", "https://example.test")
@@ -379,8 +388,13 @@ def test_ilc_provider_from_environment_installs_local_wasm(
 
     assert provider.provider_id == "ilc"
     assert [name for name, _ in calls] == ["build", "install"]
+    assert calls[0][1]["actor_id"] == "ci-test"
+    assert calls[0][1]["public_key_b64"] == "public-key"
     assert calls[1][1]["bearer_token"] == "install-token"
     assert calls[1][1]["wasm_path"] == wasm_path
+    assert calls[1][1]["token_host"] == "/lib/applied-physics/ilc_server/0.1.0"
+    assert calls[1][1]["actor_id"] == "ci-test"
+    assert calls[1][1]["public_key_b64"] == "public-key"
 
 
 @pytest.mark.integration

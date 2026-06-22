@@ -11,6 +11,7 @@ from unittest.mock import patch
 import tinychain as tc
 from tinychain.uri import URI
 
+import ilc.runtime as ilc_runtime
 from ilc import (
     AbcEvaluation,
     DEFAULT_CLIENT_LIBRARY_ROOT,
@@ -85,6 +86,97 @@ class ContractTests(unittest.TestCase):
                     expected_sha256="0" * 64,
                 )
 
+    def test_wasm_install_normalizes_authorization_header_token(self) -> None:
+        client = ILCClient()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            wasm_path = Path(temp_dir) / "cipher_wasm.wasm"
+            wasm_path.write_bytes(b"\0asm")
+
+            class Install:
+                status = 204
+
+            with patch("ilc.runtime.tc.install", return_value=Install()) as install:
+                result = wasm_install(
+                    client,
+                    bearer_token="  Bearer signed.jwt.token  ",
+                    wasm_path=wasm_path,
+                    token_host=DEFAULT_CLIENT_LIBRARY_ROOT,
+                    actor_id="ci-test",
+                    public_key_b64="falcon-public-key",
+                )
+
+        self.assertEqual(result.status, 204)
+        token = install.call_args.kwargs["token"]
+        self.assertEqual(token.bearer_token, "signed.jwt.token")
+        self.assertEqual(token.host, DEFAULT_CLIENT_LIBRARY_ROOT)
+        self.assertEqual(token.actor_id, "ci-test")
+        self.assertEqual(token.public_key_b64, "falcon-public-key")
+        self.assertEqual(token.alg, "falcon512")
+
+    def test_wasm_install_explains_invalid_bearer_token(self) -> None:
+        client = ILCClient()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            wasm_path = Path(temp_dir) / "cipher_wasm.wasm"
+            wasm_path.write_bytes(b"\0asm")
+
+            with patch(
+                "ilc.runtime.tc.install",
+                side_effect=ValueError("invalid bearer token"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "TC_INSTALL_BEARER_TOKEN"):
+                    wasm_install(
+                        client,
+                        bearer_token="bad-token",
+                        wasm_path=wasm_path,
+                    )
+
+    def test_local_kernel_dependency_recovery_preserves_token(self) -> None:
+        client = ILCClient()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch.object(ilc_runtime.tc, "KernelHandle", object, create=True),
+                patch(
+                    "ilc.runtime.tc.kernel.with_library",
+                    side_effect=ValueError("invalid dependency route authority"),
+                ),
+                patch(
+                    "tinychain._local.kernel_with_library_definition",
+                    return_value="kernel",
+                ) as recovery,
+            ):
+                kernel = ilc_runtime.build_local_kernel(
+                    client,
+                    data_dir=Path(temp_dir),
+                    token_host=DEFAULT_SERVER_LIBRARY_ROOT,
+                    actor_id="ci-test",
+                    public_key_b64="cHVi",
+                    server_authority=DEFAULT_SERVER_AUTHORITY,
+                )
+
+        self.assertEqual(kernel, "kernel")
+        self.assertIsNotNone(recovery.call_args.kwargs["token"])
+
+    def test_local_kernel_uses_falcon512_token_verifier(self) -> None:
+        client = ILCClient()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch.object(ilc_runtime.tc, "KernelHandle", object, create=True),
+                patch(
+                    "ilc.runtime.tc.kernel.with_library",
+                    return_value="kernel",
+                ) as with_library,
+            ):
+                kernel = ilc_runtime.build_local_kernel(
+                    client,
+                    data_dir=Path(temp_dir),
+                    token_host=DEFAULT_SERVER_LIBRARY_ROOT,
+                    actor_id="ci-test",
+                    public_key_b64="falcon-public-key",
+                )
+
+        self.assertEqual(kernel, "kernel")
+        self.assertEqual(with_library.call_args.kwargs["token"].alg, "falcon512")
+
     def test_example_dry_run(self) -> None:
         out = subprocess.check_output(
             [sys.executable, "examples/abc.py", "--dry-run", "--json"],
@@ -105,27 +197,42 @@ class ContractTests(unittest.TestCase):
         )
         self.assertEqual(payload["wasm_path"], str(DEFAULT_CLIENT_WASM_PATH))
 
-    def test_deferred_add_accepts_negated_rhs_for_subtraction_flow(self) -> None:
-        client = ILCClient()
-        op = client.add(metric=[3, 5], lhs=[10.0, 0.0], rhs=[-3.0, 0.0])
-        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/add")
-        self.assertEqual(op.body["rhs"], [-3.0, 0.0])
-        self.assertNotIn("context", op.body)
-
-    def test_deferred_gemm_route_shape_and_params(self) -> None:
-        client = ILCClient()
-        op = client.gemm(
-            metric=[3, 5],
-            lhs=[1.0, 2.0, 3.0, 4.0],
-            rhs=[5.0, 6.0, 7.0, 8.0],
-            lhs_rows=2,
-            lhs_cols=2,
-            rhs_cols=2,
+    def test_bootstrap_installs_tinychain_rjwt_py(self) -> None:
+        script = (self._repo_root() / "scripts" / "bootstrap_and_test.sh").read_text(
+            encoding="utf-8"
         )
-        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/exact/gemm")
-        self.assertEqual(op.body["lhs_rows"], 2)
-        self.assertEqual(op.body["lhs_cols"], 2)
-        self.assertEqual(op.body["rhs_cols"], 2)
+        self.assertIn("rjwt-py @ git+https://github.com/TinyChain-Inc/rjwt.git", script)
+
+    def test_generate_keypair_requires_falcon512_rjwt_binding(self) -> None:
+        script = (self._repo_root() / "scripts" / "generate_keypair.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('getattr(rjwt.Actor, "new_falcon512")', script)
+        self.assertIn("rjwt-py @ git+https://github.com/TinyChain-Inc/rjwt.git", script)
+
+    def test_live_preflight_rejects_common_auth_misconfiguration(self) -> None:
+        script = (self._repo_root() / "scripts" / "ci_preflight.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("raw RJWT token", script)
+        self.assertIn("TC_ACTOR_ID must not contain '/'", script)
+        self.assertIn("expected Falcon-512", script)
+
+    def test_deferred_add_uses_representative_ciphertext_contract(self) -> None:
+        client = ILCClient()
+        public_context = {"context_id": [4] * 16, "payload_dims": 2}
+        lhs = {"limbs": [[10, 0]], "shape": [2]}
+        rhs = {"limbs": [[-3, 0]], "shape": [2]}
+
+        op = client.add(
+            public_context=public_context,
+            lhs_ciphertext=lhs,
+            rhs_ciphertext=rhs,
+        )
+
+        self.assertEqual(op.path, f"{DEFAULT_CLIENT_LIBRARY_ROOT}/chart/add")
+        self.assertEqual(op.body["public_context"], public_context)
+        self.assertEqual(op.body["rhs_ciphertext"], rhs)
         self.assertNotIn("context", op.body)
 
     def test_representative_mul_and_gemm_routes_use_ciphertext_contract(self) -> None:
@@ -177,7 +284,11 @@ class ContractTests(unittest.TestCase):
         self.assertIn("public_context", encrypt_op.body)
         self.assertEqual(encrypt_op.body["public_context"], public_context)
 
-        eval_op = client.add(metric=[3, 5], lhs=[1.0, 0.0], rhs=[2.0, 0.0])
+        eval_op = client.add(
+            public_context=public_context,
+            lhs_ciphertext={"limbs": [[1, 0]], "shape": [2]},
+            rhs_ciphertext={"limbs": [[2, 0]], "shape": [2]},
+        )
         self.assertNotIn("context", eval_op.body)
 
     def test_setup_response_context_can_be_passed_directly_to_encrypt(self) -> None:
@@ -227,7 +338,7 @@ class ContractTests(unittest.TestCase):
     def test_no_bind_auth_api(self) -> None:
         self.assertFalse(hasattr(ILCClient, "bind_auth"))
 
-    def test_no_legacy_http_transport_shim(self) -> None:
+    def test_no_package_local_http_transport_shim(self) -> None:
         root = self._repo_root()
         src_files = sorted((root / "src").rglob("*.py"))
         self.assertTrue(src_files, "expected Python source files under src/")

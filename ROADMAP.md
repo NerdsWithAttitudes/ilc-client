@@ -63,8 +63,7 @@ Implementation rules:
 
 - Reuse the existing chart encrypt/decrypt route ownership and internals for
   the flattened payload.
-- Treat missing shape as a backward-compatible flat payload with shape
-  `[payload.len()]`.
+- Treat missing shape as a flat payload with shape `[payload.len()]`.
 - Validate `product(shape) == payload.len()`.
 - Validate rank, dimensions, and payload capacity before encryption.
 - Keep shape/scale metadata public and payload encryption generic.
@@ -82,26 +81,29 @@ Validation gates:
 - tensor round-trip for vectors, matrices, and rank-3 tensors;
 - shape mismatch rejects before encryption;
 - decrypted payload preserves original shape and scale metadata;
-- existing scalar/vector `/chart/encrypt` behavior remains compatible with the
-  generalized shaped-payload contract;
+- scalar/vector `/chart/encrypt` behavior remains valid under the generalized
+  shaped-payload contract;
 - executable benchmark can use shaped-payload encryption for non-data tensors
   without adding server knowledge of executable programs.
 
-Patent-shaped executable-program encryption can then be layered as:
+Patent-shaped executable-program encryption is layered as:
 
 ```text
 PlainProgram
 -> client-side graph/tensor encoding
 -> ordinary shaped-payload encryption for adjacency/opcode/metadata tensors
 -> encrypted program artifact
--> client/WASM encrypted-program execution path
+-> provider-owned encrypted-program execution path
 ```
 
-The current benchmark runtime still traverses the public `PlainProgram`; a
-future encrypted-program execution path must be a **client/WASM evaluator**
-capability driven by the encrypted program artifact rather than by public DAG
-traversal. The server must not execute the encrypted program and must not
-receive the operation DAG during evaluation.
+The benchmark runtime validates public program metadata, then delegates to the
+provider's typed `execute_program(encrypted_program, encrypted_inputs)` method.
+It does not provide a plaintext graph-walk path for executable-encryption
+claims. CKKS implements encrypted-selector execution now. ILC encrypts the same
+program tensor artifact and fails closed until the local evaluator exposes the
+selector-scaling primitive needed to run that artifact entirely client-side. The
+server must not execute the encrypted program and must not receive the operation
+DAG during evaluation.
 
 Required end-state workflow:
 
@@ -160,16 +162,16 @@ Client-side executable engineering procedure:
 - This is the same provider-neutral artifact shape used by CKKS as
   `EncryptedGraphProgram[CKKSEncryptedTensor]`.
 
-3. Client/WASM execution
-- Add a client-owned evaluator route or capability for encrypted-program
-  execution.
-- Its request/response schema is local to `ilc-client`.
-- It receives encrypted program tensors, encrypted input tensors, and public
-  execution dimensions.
-- It runs an oblivious ciphertext interpreter using encrypted selector tensors;
-  it must not branch on decrypted graph data or call the server.
-- This is entirely client-side and must not require additional Rust backend or
-  server API changes.
+3. Client-side execution
+- Require a provider-owned `execute_program` implementation for executable
+  encryption.
+- CKKS receives encrypted program tensors, encrypted input tensors, and public
+  execution dimensions, then runs an oblivious encrypted-selector interpreter
+  without inspecting plaintext opcodes or graph edges.
+- ILC must use the same `EncryptedGraphProgram[ILCEncryptedTensor]` artifact
+  once its local evaluator exposes the required selector-scaling primitive.
+- This remains entirely client-side and must not require additional Rust backend
+  or server API changes.
 
 4. Runtime dispatch
 - The public runtime requires a typed `execute_program` provider capability.
@@ -189,9 +191,9 @@ Client-side validation gates:
 - encrypted program tensors and encrypted data tensors use one context;
 - no executable-program types or routes are added to `ilc-server`;
 - no executable-program types are added to `ilc-types`;
-- client/WASM exposes encrypted-program execution but not setup, encrypt, or
-  decrypt;
-- no server calls occur during client/WASM encrypted-program execution;
+- provider execution consumes encrypted-program tensors, not plaintext opcodes
+  or plaintext graph edges;
+- no server calls occur during encrypted-program execution;
 - CKKS encrypted-program execution decrypts to the same outputs as plaintext DAG
   execution for encrypted-selector smoke workloads.
 - ILC executable-program encryption produces
@@ -239,7 +241,7 @@ Follow-up work:
 1. Post-quantum upgrade path for token signing/verification
 - Track and adopt post-quantum security support in `rjwt`.
 - Reference issue: https://github.com/TinyChain-Inc/rjwt/issues/4
-- Goal: maintain compatibility guidance while migrating toward PQ-ready auth.
+- Goal: maintain clear migration guidance while adopting PQ-ready auth.
 
 ## Planned performance work
 

@@ -42,7 +42,7 @@ class ExecutionArtifact:
 
 
 class ExecutableGraphRuntime:
-    """Execute a public program through a provider's public operation surface."""
+    """Validate public metadata and dispatch encrypted execution to the provider."""
 
     def execute(
         self,

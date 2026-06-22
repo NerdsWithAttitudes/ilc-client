@@ -152,6 +152,7 @@ The public client request contract does not include any `blind` parameter.
 
 ```bash
 pip install "tinychain @ git+https://github.com/TinyChain-Inc/client.git#subdirectory=py"
+pip install "rjwt-py @ git+https://github.com/TinyChain-Inc/rjwt.git#subdirectory=rjwt-py"
 pip install -e .
 ```
 
@@ -166,7 +167,7 @@ pip install -e .
 
 # 3) Request token from service administrator:
 #    email the service administrator with:
-#    - actor id (e.g. your-group/your-user)
+#    - actor id (e.g. ilc-ci-bot; Falcon-512 actor IDs must not contain `/`)
 #    - contents of .secrets/ilc_public_key.b64
 #    - requested libs:
 #      /lib/applied-physics/ilc_server/0.1.0
@@ -176,7 +177,7 @@ pip install -e .
 export TC_PUBLIC_KEY_B64="$(cat .secrets/ilc_public_key.b64)"
 export TC_BEARER_TOKEN="<token from admin>"
 export TC_INSTALL_BEARER_TOKEN="<client-library install token from admin>"
-export TC_ACTOR_ID="your-group/your-user"
+export TC_ACTOR_ID="ilc-ci-bot"
 export TC_TOKEN_HOST="/lib/applied-physics/ilc_server/0.1.0"
 # optional but recommended: enforce WASM integrity at runtime
 export ILC_CLIENT_WASM_SHA256="<sha256 hex of cipher_wasm.wasm>"
@@ -272,11 +273,11 @@ For ILC, the server boundary remains setup plus shaped `/chart/encrypt` and
 `/chart/decrypt`. Program encoding and executable-graph evaluation are client
 responsibilities.
 
-TFHE is intentionally not included in this PR. Its bit-level ciphertext model
-is a poor fit for this quantitative tensor benchmark, where CKKS-style
-approximate arithmetic evaluates real-valued matrix/tensor workloads directly.
-A second approximate or arithmetic FHE backend would be the right next
-portability check.
+TFHE is intentionally not included in the executable-encryption benchmark
+surface. Its bit-level ciphertext model is a poor fit for this quantitative
+tensor benchmark, where CKKS-style approximate arithmetic evaluates real-valued
+matrix/tensor workloads directly. A second approximate or arithmetic FHE backend
+would be the right next portability check.
 
 Plaintext smoke benchmark:
 
@@ -307,7 +308,7 @@ execution with OpenFHE-managed rescale/level alignment. To test deeper
 encrypted-selector circuits, construct `CKKSProvider(CKKSConfig(...))` with a
 larger depth budget in Python rather than relying on the CLI defaults.
 
-CKKS encrypted-graph benchmark snapshot from local validation on 2026-06-22:
+CKKS encrypted-graph benchmark snapshot from local validation on 2026-06-23:
 
 - Python: 3.12.3
 - OpenFHE Python: installed locally; package did not expose `__version__`
@@ -319,7 +320,7 @@ CKKS encrypted-graph benchmark snapshot from local validation on 2026-06-22:
 
 | Workload | Encrypt s | Execute s | Decrypt s | Total s | Max abs error |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `mnist_linear_v1_b1` | 20.1085 | 47.6719 | 0.1028 | 67.8832 | 3.09e-13 |
+| `mnist_linear_v1_b1` | 20.4228 | 56.8506 | 0.0754 | 77.3488 | 2.94e-13 |
 
 This snapshot is not comparable to older public-schedule CKKS numbers because
 the executor homomorphically applies encrypted graph selectors and encrypted
