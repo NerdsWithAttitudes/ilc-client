@@ -63,10 +63,22 @@ def wasm_install(
         public_key_b64="",
         bearer_token=bearer_token,
     )
-    return tc.install(
-        schema_owner,
-        wasm=wasm_path,
-        kernel=kernel,
-        data_dir=data_dir,
-        token=token,
-    )
+    try:
+        return tc.install(
+            schema_owner,
+            wasm=wasm_path,
+            kernel=kernel,
+            data_dir=data_dir,
+            token=token,
+        )
+    except ValueError as e:
+        if str(e) == "invalid bearer token":
+            route = getattr(schema_owner, "route_root", str(schema_owner.id().path))
+            raise RuntimeError(
+                "WASM install token was rejected by the local TinyChain verifier. "
+                f"TC_INSTALL_BEARER_TOKEN must be a raw RJWT bearer token which "
+                f"authorizes installing {route}, not an Authorization header and "
+                "not a runtime-only route token. It must be signed by TC_ACTOR_ID "
+                "for TC_TOKEN_HOST using the public key in TC_PUBLIC_KEY_B64."
+            ) from e
+        raise

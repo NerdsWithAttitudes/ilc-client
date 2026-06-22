@@ -107,8 +107,8 @@ class ILCClient(Library):
 
     publisher = PUBLISHER
     version = DEFAULT_VERSION
-    authority = URI.parse(DEFAULT_LOCAL_AUTHORITY)
     dependencies = (URI.parse(DEFAULT_SERVER_LIBRARY_ROOT),)
+    authority = URI.parse(DEFAULT_LOCAL_AUTHORITY)
 
     def bind_server(
         self,

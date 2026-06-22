@@ -26,6 +26,31 @@ Use this when a local or private ILC server is available:
 ILC_INTEGRATION_SERVER=http://127.0.0.1:8700 ./scripts/integration_smoke.sh
 ```
 
+## Parent-repo local live-smoke parity
+
+When working from the private parent `ilc` repository, prefer the parent smoke
+script for end-to-end local reproduction of the GitHub `Live ABC Smoke` job:
+
+```bash
+cd /path/to/ilc
+bash ci/run_ilc_wasm_python_smoke.sh
+```
+
+That script supplies the inputs which are normally GitHub repository
+variables/secrets:
+
+- builds `target/wasm32-unknown-unknown/release/examples/cipher_wasm.wasm`;
+- starts a local `ilc-http-server`;
+- reads the test identity from `ilc-server/auth.example.toml`;
+- mints a runtime bearer token and a separate client-library install token;
+- exports `TC_BEARER_TOKEN`, `TC_INSTALL_BEARER_TOKEN`, `TC_TOKEN_HOST`,
+  `TC_ACTOR_ID`, and `TC_PUBLIC_KEY_B64`;
+- runs `ilc-client-public/examples/abc.py` against the local server.
+
+Use this path to reproduce token, WASM-install, route, and local-kernel issues
+before updating public GitHub secrets. Running `scripts/ci_live_smoke.sh` from
+this public repo still requires those values to be provided explicitly.
+
 ## GitHub Actions live integration check
 
 Workflow: `.github/workflows/ci.yml`
@@ -43,7 +68,7 @@ Required repository configuration for `Live ABC Smoke`:
   - `ILC_CLIENT_WASM_SHA256` (hex sha256 of `cipher_wasm.wasm`)
 - Secrets:
   - `TC_BEARER_TOKEN`
-  - `TC_INSTALL_BEARER_TOKEN` (optional if same as bearer token)
+  - `TC_INSTALL_BEARER_TOKEN` (token authorized to install `/lib/applied-physics/ilc_client/0.1.0`)
   - `TC_PUBLIC_KEY_B64`
   - one of:
     - `ILC_CLIENT_WASM_B64` (base64-encoded wasm), or

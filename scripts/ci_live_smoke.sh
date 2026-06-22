@@ -7,7 +7,7 @@ cd "$ROOT"
 VENV_DIR="${VENV_DIR:-.venv}"
 SERVER="${ILC_INTEGRATION_SERVER:-}"
 TOKEN="${TC_BEARER_TOKEN:-}"
-INSTALL_TOKEN="${TC_INSTALL_BEARER_TOKEN:-$TOKEN}"
+INSTALL_TOKEN="${TC_INSTALL_BEARER_TOKEN:-}"
 PUBKEY="${TC_PUBLIC_KEY_B64:-}"
 TOKEN_HOST="${TC_TOKEN_HOST:-/lib/applied-physics/ilc_server/0.1.0}"
 WASM_SHA256="${ILC_CLIENT_WASM_SHA256:-}"
@@ -19,6 +19,13 @@ fi
 
 if [[ -z "$TOKEN" ]]; then
   echo "error: TC_BEARER_TOKEN is required" >&2
+  exit 1
+fi
+
+if [[ -z "$INSTALL_TOKEN" ]]; then
+  echo "error: TC_INSTALL_BEARER_TOKEN is required" >&2
+  echo "  It must authorize installing /lib/applied-physics/ilc_client/0.1.0 into the local TinyChain kernel." >&2
+  echo "  Do not reuse TC_BEARER_TOKEN unless that token was minted with the client-library install claim." >&2
   exit 1
 fi
 

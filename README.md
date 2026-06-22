@@ -168,7 +168,7 @@ pip install -e .
 # 4) Set runtime credentials after receiving token
 export TC_PUBLIC_KEY_B64="$(cat .secrets/ilc_public_key.b64)"
 export TC_BEARER_TOKEN="<token from admin>"
-export TC_INSTALL_BEARER_TOKEN="$TC_BEARER_TOKEN"
+export TC_INSTALL_BEARER_TOKEN="<client-library install token from admin>"
 export TC_ACTOR_ID="your-group/your-user"
 export TC_TOKEN_HOST="/lib/applied-physics/ilc_server/0.1.0"
 # optional but recommended: enforce WASM integrity at runtime

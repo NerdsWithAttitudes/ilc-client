@@ -20,7 +20,8 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 fi
 
 if [[ -z "${TC_INSTALL_BEARER_TOKEN:-}" ]]; then
-  echo "warning: TC_INSTALL_BEARER_TOKEN is empty, CI will reuse TC_BEARER_TOKEN"
+  echo "error: TC_INSTALL_BEARER_TOKEN is required for local WASM install" >&2
+  exit 1
 fi
 
 if [[ -n "${ILC_WASM_PATH:-}" ]]; then

@@ -65,5 +65,5 @@ Required configuration:
   3) Set runtime environment variables:
      export ${ENV_TC_PUBLIC_KEY_B64}="\$(cat ${PUBLIC_B64})"
      export ${ENV_TC_BEARER_TOKEN}="<token from admin>"
-     export ${ENV_TC_INSTALL_BEARER_TOKEN}="\$${ENV_TC_BEARER_TOKEN}"
+     export ${ENV_TC_INSTALL_BEARER_TOKEN}="<client-library install token from admin>"
 EOF

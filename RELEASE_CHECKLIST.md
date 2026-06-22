@@ -45,7 +45,7 @@ Repository variables:
 Repository secrets:
 
 - `TC_BEARER_TOKEN=<ci token>`
-- `TC_INSTALL_BEARER_TOKEN=<ci token>` (or leave empty to reuse bearer token)
+- `TC_INSTALL_BEARER_TOKEN=<ci install token authorized for /lib/applied-physics/ilc_client/0.1.0>`
 - `TC_PUBLIC_KEY_B64=<ci public key b64>`
 - one of:
   - `ILC_CLIENT_WASM_URL=<immutable versioned URL>`
@@ -53,12 +53,24 @@ Repository secrets:
 
 ## 4) Local parity check before push
 
-Run from `ilc-client-public`:
+Run public package checks from `ilc-client-public`:
 
 ```bash
 ./scripts/bootstrap_and_test.sh
-./scripts/ci_live_smoke.sh
 ```
+
+Run the full local equivalent of the GitHub `Live ABC Smoke` job from the
+private parent `ilc` repo:
+
+```bash
+cd /path/to/ilc
+bash ci/run_ilc_wasm_python_smoke.sh
+```
+
+The parent script builds the client WASM, starts a local `ilc-http-server`,
+mints both required bearer tokens, and runs
+`ilc-client-public/examples/abc.py` with the same local-kernel install path used
+by CI.
 
 ## 5) CI pass criteria
 
