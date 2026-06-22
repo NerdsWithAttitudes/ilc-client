@@ -30,8 +30,8 @@ Automation:
 2. Add CI public key to ILC server allowlist.
 3. Mint a test token for CI actor with least-privilege route scope and short TTL.
 4. Confirm token audience/host aligns with:
-   - `/lib/applied-physics/ilc/0.1.0`
-   - `/lib/applied-physics/ilc-client/0.1.0`
+   - `/lib/applied-physics/ilc_server/0.1.0`
+   - `/lib/applied-physics/ilc_client/0.1.0`
 
 ## 3) Configure `ilc-client-public` GitHub repo
 
@@ -39,7 +39,7 @@ Repository variables:
 
 - `ILC_ENABLE_LIVE_SMOKE=1`
 - `ILC_INTEGRATION_SERVER=https://<cloud-run-url>`
-- `TC_TOKEN_HOST=/lib/applied-physics/ilc/0.1.0`
+- `TC_TOKEN_HOST=/lib/applied-physics/ilc_server/0.1.0`
 - `ILC_CLIENT_WASM_SHA256=<sha256-hex>`
 
 Repository secrets:

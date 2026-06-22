@@ -38,7 +38,7 @@ Required repository configuration for `Live ABC Smoke`:
 
 - Variables:
   - `ILC_INTEGRATION_SERVER` (for example `https://<cloud-run-url>`)
-  - `TC_TOKEN_HOST` (for example `/lib/applied-physics/ilc/0.1.0`)
+  - `TC_TOKEN_HOST` (for example `/lib/applied-physics/ilc_server/0.1.0`)
   - `TC_ACTOR_ID` (for example `applied-physics/ci-bot`)
   - `ILC_CLIENT_WASM_SHA256` (hex sha256 of `cipher_wasm.wasm`)
 - Secrets:
