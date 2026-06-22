@@ -158,7 +158,7 @@ pip install -e .
 ./scripts/generate_keypair.sh
 
 # 3) Request token from service administrator:
-#    email ilc-admin@appliedphysics.org with:
+#    email the service administrator with:
 #    - actor id (e.g. your-group/your-user)
 #    - contents of .secrets/ilc_public_key.b64
 #    - requested libs:
