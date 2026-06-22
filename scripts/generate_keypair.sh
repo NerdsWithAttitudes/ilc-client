@@ -3,7 +3,6 @@ set -euo pipefail
 
 OUT_DIR="${1:-.secrets}"
 mkdir -p "${OUT_DIR}"
-chmod 700 "${OUT_DIR}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -20,8 +19,8 @@ PY
 SERVER_LIB="$(printf '%s\n' "$DEFAULTS" | sed -n '1p')"
 CLIENT_LIB="$(printf '%s\n' "$DEFAULTS" | sed -n '2p')"
 ADMIN_EMAIL="$(printf '%s\n' "$DEFAULTS" | sed -n '3p')"
-SERVER_LIB="${SERVER_LIB:-/lib/applied-physics/ilc_server/0.1.0}"
-CLIENT_LIB="${CLIENT_LIB:-/lib/applied-physics/ilc_client/0.1.0}"
+SERVER_LIB="${SERVER_LIB:-/lib/applied-physics/ilc/0.1.0}"
+CLIENT_LIB="${CLIENT_LIB:-/lib/applied-physics/ilc-client/0.1.0}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-$(printf '%s@%s' haydn appliedphysics.org)}"
 ENV_TC_PUBLIC_KEY_B64="TC_PUBLIC_KEY_B64"
 ENV_TC_BEARER_TOKEN="TC_BEARER_TOKEN"

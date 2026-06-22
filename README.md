@@ -123,8 +123,8 @@ sum_result = tc.execute(sum_op)
 ## Default configuration constants
 
 - server authority: `https://api.tctest.net`
-- server library root: `/lib/applied-physics/ilc_server/0.1.0`
-- client library root: `/lib/applied-physics/ilc_client/0.1.0`
+- server library root: `/lib/applied-physics/ilc/0.1.0`
+- client library root: `/lib/applied-physics/ilc-client/0.1.0`
 - default local authority: `http://127.0.0.1:8700`
 - default WASM path: `artifacts/cipher_wasm.wasm` (not committed)
 - local compute defaults: `ilc.DEFAULT_COMPUTE` (`metric`)
@@ -162,15 +162,15 @@ pip install -e .
 #    - actor id (e.g. your-group/your-user)
 #    - contents of .secrets/ilc_public_key.b64
 #    - requested libs:
-#      /lib/applied-physics/ilc_server/0.1.0
-#      /lib/applied-physics/ilc_client/0.1.0
+#      /lib/applied-physics/ilc/0.1.0
+#      /lib/applied-physics/ilc-client/0.1.0
 
 # 4) Set runtime credentials after receiving token
 export TC_PUBLIC_KEY_B64="$(cat .secrets/ilc_public_key.b64)"
 export TC_BEARER_TOKEN="<token from admin>"
 export TC_INSTALL_BEARER_TOKEN="$TC_BEARER_TOKEN"
 export TC_ACTOR_ID="your-group/your-user"
-export TC_TOKEN_HOST="/lib/applied-physics/ilc_server/0.1.0"
+export TC_TOKEN_HOST="/lib/applied-physics/ilc/0.1.0"
 # optional but recommended: enforce WASM integrity at runtime
 export ILC_CLIENT_WASM_SHA256="<sha256 hex of cipher_wasm.wasm>"
 

@@ -106,7 +106,7 @@ def main() -> int:
     args = parser.parse_args()
 
     server = ILCServer(authority=URI.parse(args.server)) if args.server else ILCServer()
-    client = ILCClient().bind_server(server)
+    client = ILCClient()
     wasm_path = Path(args.wasm_path)
 
     if args.dry_run:
@@ -130,7 +130,7 @@ def main() -> int:
         return 0
 
     runtime = _load_runtime_inputs(server)
-    data_dir = Path(os.environ.get("ILC_LOCAL_DATA_DIR", ".ilc-local"))
+    data_dir = Path(".ilc-local")
     data_dir.mkdir(parents=True, exist_ok=True)
     kernel = build_local_kernel(
         client,
@@ -146,23 +146,14 @@ def main() -> int:
         expected_sha256=runtime.wasm_sha256,
         kernel=kernel,
     )
-    install_status = getattr(install, "status", None)
-    if callable(install_status):
-        install_status = install_status()
-    if install_status != 204:
+    if getattr(install, "status", None) != 204:
         raise RuntimeError(
             "WASM install failed. "
-            f"status={install_status} "
+            f"status={getattr(install, 'status', None)} "
             f"Check token claims for {client.route_root} and token-host alignment."
         )
 
-    token = tc.auth.SignedBearerToken(
-        host=runtime.token_host,
-        actor_id=runtime.actor_id or "",
-        public_key_b64=runtime.public_key_b64,
-        bearer_token=runtime.bearer_token,
-    )
-    with tc.backend(kernel, token=token):
+    with tc.backend(kernel, bearer_token=runtime.bearer_token):
         abc = evaluate_abc(
             client=client,
             a=args.a,

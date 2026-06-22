@@ -22,15 +22,15 @@ def build_local_kernel(
         raise RuntimeError("tinychain-local is required for local PyO3 kernel usage")
 
     if token_host and actor_id and public_key_b64:
-        token = tc.auth.SignedBearerToken(
-            host=token_host,
-            actor_id=actor_id,
-            public_key_b64=public_key_b64,
-            bearer_token="",
+        return tc.KernelHandle.with_library_schema_rjwt(
+            schema_owner.schema_json(),
+            token_host,
+            actor_id,
+            public_key_b64,
+            data_dir=str(data_dir),
         )
-        return tc.kernel.with_library(schema_owner, data_dir=data_dir, token=token)
 
-    return tc.kernel.with_library(schema_owner, data_dir=data_dir)
+    return tc.KernelHandle.with_library_schema(schema_owner.schema_json())
 
 
 def wasm_install(
@@ -57,16 +57,10 @@ def wasm_install(
                 f"expected {expected}, got {digest} for {wasm_path}"
             )
 
-    token = tc.auth.SignedBearerToken(
-        host="",
-        actor_id="",
-        public_key_b64="",
-        bearer_token=bearer_token,
-    )
-    return tc.install(
-        schema_owner,
-        wasm=wasm_path,
+    return tc.wasm.install(
+        schema_owner.schema(),
+        wasm_path,
         kernel=kernel,
         data_dir=data_dir,
-        token=token,
+        bearer_token=bearer_token,
     )
