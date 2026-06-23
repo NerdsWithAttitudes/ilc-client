@@ -23,11 +23,10 @@ from .config import (
 )
 from .example_ops import AbcEvaluation, evaluate_abc
 from .library import (
-    CipherContext,
     ILCClient,
     ILCServer,
 )
-from .runtime import build_local_kernel, wasm_install
+from .runtime import backend_context, build_local_kernel, execute_route, wasm_install
 
 __all__ = [
     "DEFAULT_CLIENT_WASM_PATH",
@@ -52,10 +51,11 @@ __all__ = [
     "client_library_root",
     "server_library_root",
     "AbcEvaluation",
-    "CipherContext",
     "ILCClient",
     "ILCServer",
+    "backend_context",
     "build_local_kernel",
     "evaluate_abc",
+    "execute_route",
     "wasm_install",
 ]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TypeAlias, TypedDict
+from typing import Any
 
 import tinychain.executor as tc_executor
 from tinychain.library import Library
@@ -15,25 +15,11 @@ from .config import (
     PUBLISHER,
 )
 
-Metric: TypeAlias = list[int]
-Ciphertext: TypeAlias = list[float]
-
-
 def _maybe_execute(op: OpRef) -> object:
     executor = tc_executor.try_current()
     if executor is not None and executor.is_eager():
         return executor.execute(op)
     return op
-
-
-class CipherContext(TypedDict):
-    """Canonical setup context shape returned by the server and passed to secret routes."""
-
-    version: int
-    alg: str
-    kid: str | None
-    payload_b64: str
-    signature_b64: str
 
 
 class ILCServer(Library):
@@ -54,50 +40,73 @@ class ILCServer(Library):
         self,
         *,
         params: dict[str, Any],
-        secret_metric: list[int],
         payload_dims: int,
-        nonce_dims: int,
-        nonce_bound: int,
-        salt_hex: str | None = None,
+        nonce_dims: int = 0,
+        representative_dims: int | None = None,
+        metric_policy: str = "public-client-default",
+        admitted_ops: list[str] | None = None,
+        payload_budget_log2: int | None = None,
     ) -> object:
-        return self._post(
-            "/setup",
-            {
-                "params": params,
-                "secret_metric": secret_metric,
-                "payload_dims": payload_dims,
-                "nonce_dims": nonce_dims,
-                "nonce_bound": nonce_bound,
-                "salt_hex": salt_hex,
-            },
-        )
+        body: dict[str, object] = {
+            "params": params,
+            "payload_dims": payload_dims,
+            "representative_dims": representative_dims or payload_dims + nonce_dims,
+            "metric_policy": metric_policy,
+            "admitted_ops": admitted_ops or ["add"],
+        }
+        if payload_budget_log2 is not None:
+            body["payload_budget_log2"] = payload_budget_log2
+        return self._post("/chart/setup", body)
 
     def encrypt(
         self,
         *,
-        context: CipherContext,
+        public_context: dict[str, Any],
         payload: list[int],
+        shape: list[int] | None = None,
         budget_log2: int | None = None,
     ) -> object:
         body: dict[str, object] = {
-            "context": context,
+            "public_context": public_context,
             "payload": payload,
         }
+        if shape is not None:
+            body["shape"] = shape
         if budget_log2 is not None:
             body["budget_log2"] = budget_log2
-        return self._post("/encrypt", body)
+        return self._post("/chart/encrypt", body)
 
     def decrypt(
         self,
         *,
-        context: CipherContext,
+        public_context: dict[str, Any],
         ciphertext: dict[str, Any],
+        handle: dict[str, Any] | None = None,
+    ) -> object:
+        if handle is None:
+            raise ValueError("decrypt requires handle")
+        return self._post(
+            "/chart/decrypt",
+            {
+                "public_context": public_context,
+                "ciphertext": ciphertext,
+                "handle": handle,
+            },
+        )
+
+    def record_eval(
+        self,
+        *,
+        public_context: dict[str, Any],
+        op: str,
+        input_handles: list[dict[str, Any]],
     ) -> object:
         return self._post(
-            "/decrypt",
+            "/chart/record_eval",
             {
-                "context": context,
-                "ciphertext": ciphertext,
+                "public_context": public_context,
+                "op": op,
+                "input_handles": input_handles,
             },
         )
 
@@ -134,54 +143,77 @@ class ILCClient(Library):
     def add(
         self,
         *,
-        metric: Metric | None = None,
-        lhs: Ciphertext | None = None,
-        rhs: Ciphertext | None = None,
-        public_context: dict[str, Any] | None = None,
-        lhs_ciphertext: dict[str, Any] | None = None,
-        rhs_ciphertext: dict[str, Any] | None = None,
+        public_context: dict[str, Any],
+        lhs_ciphertext: dict[str, Any],
+        rhs_ciphertext: dict[str, Any],
     ) -> object:
-        if public_context is not None or lhs_ciphertext is not None or rhs_ciphertext is not None:
-            return self._get(
-                "/chart/add",
-                {
-                    "public_context": public_context,
-                    "lhs_ciphertext": lhs_ciphertext,
-                    "rhs_ciphertext": rhs_ciphertext,
-                },
-            )
         return self._get(
             "/chart/add",
-            {"metric": metric or [], "lhs": lhs or [], "rhs": rhs or []},
+            {
+                "public_context": public_context,
+                "lhs_ciphertext": lhs_ciphertext,
+                "rhs_ciphertext": rhs_ciphertext,
+            },
         )
 
     def mul(
         self,
         *,
-        metric: Metric,
-        lhs: Ciphertext,
-        rhs: Ciphertext,
+        public_context: dict[str, Any],
+        lhs_ciphertext: dict[str, Any] | None = None,
+        rhs_ciphertext: dict[str, Any] | None = None,
+        witness: dict[str, Any] | None = None,
+        lhs_approx: dict[str, Any] | None = None,
+        rhs_approx: dict[str, Any] | None = None,
+        witness_approx: dict[str, Any] | None = None,
     ) -> object:
-        return self._get("/chart/exact/mul", {"metric": metric, "lhs": lhs, "rhs": rhs})
+        if lhs_approx is not None:
+            return self._get(
+                "/chart/approx/mul",
+                {
+                    "public_context": public_context,
+                    "lhs_approx": lhs_approx,
+                    "rhs_approx": rhs_approx,
+                    "witness_approx": witness_approx,
+                },
+            )
+        return self._get(
+            "/chart/exact/mul",
+            {
+                "public_context": public_context,
+                "lhs_ciphertext": lhs_ciphertext,
+                "rhs_ciphertext": rhs_ciphertext,
+                "witness": witness,
+            },
+        )
 
     def gemm(
         self,
         *,
-        metric: Metric,
-        lhs: Ciphertext,
-        rhs: Ciphertext,
-        lhs_rows: int,
-        lhs_cols: int,
-        rhs_cols: int,
+        public_context: dict[str, Any],
+        lhs_ciphertext: dict[str, Any] | None = None,
+        rhs_ciphertext: dict[str, Any] | None = None,
+        witness: dict[str, Any] | None = None,
+        lhs_approx: dict[str, Any] | None = None,
+        rhs_approx: dict[str, Any] | None = None,
+        witness_approx: dict[str, Any] | None = None,
     ) -> object:
+        if lhs_approx is not None:
+            return self._get(
+                "/chart/approx/gemm",
+                {
+                    "public_context": public_context,
+                    "lhs_approx": lhs_approx,
+                    "rhs_approx": rhs_approx,
+                    "witness_approx": witness_approx,
+                },
+            )
         return self._get(
             "/chart/exact/gemm",
             {
-                "metric": metric,
-                "lhs": lhs,
-                "rhs": rhs,
-                "lhs_rows": int(lhs_rows),
-                "lhs_cols": int(lhs_cols),
-                "rhs_cols": int(rhs_cols),
+                "public_context": public_context,
+                "lhs_ciphertext": lhs_ciphertext,
+                "rhs_ciphertext": rhs_ciphertext,
+                "witness": witness,
             },
         )

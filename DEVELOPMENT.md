@@ -8,14 +8,16 @@ Maintainer reference for the public `ilc` package.
 ./scripts/bootstrap_and_test.sh
 ```
 
-This script creates `.venv`, installs TinyChain from Git, installs `ilc` in
-editable mode, and runs the package test suite with `pytest`.
+This script creates `.venv`, installs TinyChain from Git, installs TinyChain's
+`rjwt-py` Falcon-512 bindings, installs `ilc` in editable mode, and runs the
+package test suite with `pytest`.
 
 ## Baseline checks
 
 ```bash
 ./.venv/bin/python -m pytest -q
 ./.venv/bin/python examples/abc.py --dry-run --json
+./.venv/bin/python -m ilc.executable.benchmark --workload add_chain --provider plaintext --repeat 3 --output-format json
 ```
 
 ## Local integration check
@@ -59,12 +61,18 @@ Workflow: `.github/workflows/ci.yml`
 - `Live ABC Smoke` runs only when repository variable `ILC_ENABLE_LIVE_SMOKE=1`.
 - Scheduled config drift check: `.github/workflows/preflight.yml`.
 
+`Live ABC Smoke` validates the public client against the deployed/live backend.
+It is expected to fail until that backend has been updated to the route
+contract expected by this client branch and issued matching Falcon-512 RJWT
+tokens. Keep `ILC_ENABLE_LIVE_SMOKE=0` for this PR unless the live backend has
+already been upgraded.
+
 Required repository configuration for `Live ABC Smoke`:
 
 - Variables:
   - `ILC_INTEGRATION_SERVER` (for example `https://<cloud-run-url>`)
   - `TC_TOKEN_HOST` (for example `/lib/applied-physics/ilc_server/0.1.0`)
-  - `TC_ACTOR_ID` (for example `applied-physics/ci-bot`)
+  - `TC_ACTOR_ID` (for example `ilc-ci-bot`; Falcon-512 actor IDs must not contain `/`)
   - `ILC_CLIENT_WASM_SHA256` (hex sha256 of `cipher_wasm.wasm`)
 - Secrets:
   - `TC_BEARER_TOKEN`
@@ -83,6 +91,8 @@ export ILC_CLIENT_WASM_SHA256="$(sha256sum /absolute/path/to/cipher_wasm.wasm | 
 Runtime requirements for local WASM check:
 - Rust toolchain (`cargo`) available
 - `maturin` (installed automatically by `scripts/install_tinychain_local.sh`)
+- TinyChain `rjwt-py` installed from
+  `https://github.com/TinyChain-Inc/rjwt.git#subdirectory=rjwt-py`
 - network access to clone TinyChain public repos:
   - `https://github.com/TinyChain-Inc/client.git`
   - `https://github.com/TinyChain-Inc/tc-server.git`
@@ -95,6 +105,49 @@ Release governance checklist:
 
 Framework-gap tracking:
 - `FRAMEWORK_GAPS.md`
+
+## Executable benchmark checks
+
+Baseline executable benchmark checks require no OpenFHE, WASM, or live ILC
+service:
+
+```bash
+./.venv/bin/python -m pytest -q
+./.venv/bin/python -m ilc.executable.benchmark \
+  --workload add_chain \
+  --provider plaintext \
+  --repeat 3 \
+  --output-format json
+```
+
+CKKS checks require optional OpenFHE Python and are skipped or fail with a
+public missing-dependency error when OpenFHE is unavailable:
+
+```bash
+./.venv/bin/python -m pytest -q -m "ckks"
+./.venv/bin/python -m ilc.executable.benchmark \
+  --workload mnist_linear_v1_b1 \
+  --provider ckks \
+  --repeat 1 \
+  --output-format json
+```
+
+Use `repeat=1` only as a smoke check. For reportable benchmark numbers, run a
+larger repeat count and archive the JSON/CSV output outside Git.
+
+ILC executable benchmark checks require the same live credentials and local
+WASM prerequisites as the ABC smoke:
+
+```bash
+./scripts/ci_preflight.sh
+./scripts/executable_benchmark_smoke.sh
+```
+
+By default this runs `mnist_linear_v1_b1` with `provider=ckks`, because CKKS is
+the implemented executable-encryption backend. Override with
+`ILC_EXECUTABLE_WORKLOAD`, `ILC_EXECUTABLE_PROVIDER`, or
+`ILC_EXECUTABLE_REPEAT`. The ILC executable provider remains fail-closed until
+local encrypted selector scaling is implemented.
 
 ## Scope reminder
 

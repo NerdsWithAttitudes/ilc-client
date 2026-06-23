@@ -13,6 +13,10 @@ VENV_DIR="${VENV_DIR:-.venv}"
 # Install TinyChain client directly from GitHub.
 "$VENV_DIR/bin/pip" install "tinychain @ git+https://github.com/TinyChain-Inc/client.git#subdirectory=py"
 
+# Install TinyChain's Python RJWT bindings. The PyPI `rjwt` package can be older
+# and may not expose Falcon-512 key generation.
+"$VENV_DIR/bin/pip" install "rjwt-py @ git+https://github.com/TinyChain-Inc/rjwt.git#subdirectory=rjwt-py"
+
 # Install this package in editable mode.
 "$VENV_DIR/bin/pip" install -e .
 

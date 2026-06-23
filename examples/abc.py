@@ -50,7 +50,7 @@ def _missing_env_error() -> str:
         "Optional:\n"
         f"  export {ENV_ILC_CLIENT_WASM_SHA256}=<expected wasm sha256>\n"
         f"  export {ENV_TC_TOKEN_HOST}={DEFAULT_SERVER_LIBRARY_ROOT}\n"
-        f"  export {ENV_TC_ACTOR_ID}=<group>/<user>\n"
+        f"  export {ENV_TC_ACTOR_ID}=<stable-actor-id>\n"
         "Then run:\n"
         f"  python examples/abc.py --server {DEFAULT_LOCAL_AUTHORITY} "
         "--wasm-path /path/to/cipher_wasm.wasm"
@@ -65,7 +65,7 @@ def _load_runtime_inputs(server: ILCServer) -> RuntimeInputs:
     public_key_b64 = os.environ.get(ENV_TC_PUBLIC_KEY_B64)
     wasm_sha256 = os.environ.get(ENV_ILC_CLIENT_WASM_SHA256)
 
-    if not bearer_token or not install_bearer_token or not public_key_b64:
+    if not bearer_token or not install_bearer_token or not public_key_b64 or not actor_id:
         raise RuntimeError(_missing_env_error())
 
     return RuntimeInputs(
@@ -150,6 +150,9 @@ def main() -> int:
         wasm_path=wasm_path,
         expected_sha256=runtime.wasm_sha256,
         kernel=kernel,
+        token_host=runtime.token_host,
+        actor_id=runtime.actor_id,
+        public_key_b64=runtime.public_key_b64,
     )
     install_status = getattr(install, "status", None)
     if callable(install_status):

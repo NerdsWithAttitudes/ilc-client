@@ -21,6 +21,13 @@ jobs:
       run: ./scripts/bootstrap_and_test.sh
     - name: Dry-run example
       run: ./.venv/bin/python examples/abc.py --dry-run --json
+    - name: Plaintext executable benchmark (validation enforced)
+      env:
+        PYTHON_BIN: .venv/bin/python
+        ILC_EXECUTABLE_PROVIDER: plaintext
+        ILC_EXECUTABLE_WORKLOAD: add_chain,mul_chain,gemm_chain_small,mnist_linear_v1_b1
+        ILC_EXECUTABLE_REPEAT: "1"
+      run: ./scripts/run_executable_benchmark.sh
 
   live_abc_smoke:
     name: Live ABC Smoke
@@ -61,3 +68,53 @@ jobs:
         TC_TOKEN_HOST: ${{ vars.TC_TOKEN_HOST }}
         TC_ACTOR_ID: ${{ vars.TC_ACTOR_ID }}
       run: ./scripts/ci_live_smoke.sh
+    - name: Run executable benchmark smoke
+      env:
+        ILC_INTEGRATION_SERVER: ${{ vars.ILC_INTEGRATION_SERVER }}
+        ILC_WASM_PATH: artifacts/cipher_wasm.wasm
+        ILC_CLIENT_WASM_SHA256: ${{ vars.ILC_CLIENT_WASM_SHA256 }}
+        TC_BEARER_TOKEN: ${{ secrets.TC_BEARER_TOKEN }}
+        TC_INSTALL_BEARER_TOKEN: ${{ secrets.TC_INSTALL_BEARER_TOKEN }}
+        TC_PUBLIC_KEY_B64: ${{ secrets.TC_PUBLIC_KEY_B64 }}
+        TC_TOKEN_HOST: ${{ vars.TC_TOKEN_HOST }}
+        TC_ACTOR_ID: ${{ vars.TC_ACTOR_ID }}
+      run: ./scripts/executable_benchmark_smoke.sh
+
+  # Validates the encrypted (CKKS) execution path that the Contract Tests job
+  # cannot: its only genuine encrypted-correctness test is gated behind
+  # importorskip("openfhe"), which is not installed there. Opt-in via the repo
+  # variable ILC_ENABLE_CKKS_CI (set to "1"), mirroring ILC_ENABLE_LIVE_SMOKE,
+  # because OpenFHE has no reliable wheel on hosted runners.
+  ckks_encrypted:
+    name: CKKS Encrypted Execution
+    if: ${{ vars.ILC_ENABLE_CKKS_CI == '1' }}
+    runs-on: ubuntu-latest
+    needs:
+    - contract
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        # Matches the recorded CKKS benchmark environment (Python 3.12).
+        python-version: "3.12"
+    - name: Install dependencies (with OpenFHE)
+      run: |
+        python -m pip install --upgrade pip
+        pip install "tinychain @ git+https://github.com/TinyChain-Inc/client.git#subdirectory=py"
+        pip install -e ".[ckks]"
+        pip install pytest
+    - name: Verify OpenFHE import (fail-closed; avoids a false-green skip)
+      run: python -c "import openfhe; print('openfhe', getattr(openfhe, '__version__', 'unknown'))"
+    - name: Run CKKS encrypted-execution correctness test
+      run: python -m pytest -q -m ckks tests/test_executable.py
+    - name: CKKS encrypted benchmark (validation enforced)
+      env:
+        PYTHON_BIN: python
+        # mnist_linear_v1_b1 is the workload whose encrypted-graph depth (4) fits
+        # the default CKKSConfig.multiplicative_depth; the chain workloads inflate
+        # depth past the default budget and would raise DepthBudgetError.
+        ILC_EXECUTABLE_PROVIDER: ckks
+        ILC_EXECUTABLE_WORKLOAD: mnist_linear_v1_b1
+        ILC_EXECUTABLE_REPEAT: "1"
+        ILC_EXECUTABLE_ALLOW_SKIP: "0"
+      run: ./scripts/run_executable_benchmark.sh

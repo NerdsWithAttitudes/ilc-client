@@ -105,7 +105,7 @@ ipython_config.py
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
 #   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
+poetry.lock
 #poetry.toml
 
 # pdm
@@ -209,6 +209,9 @@ __marimo__/
 # ILC WASM artifacts (must never be committed)
 *.wasm
 artifacts/
+
+# Local generated benchmark output
+benchmark-results/
 
 # Local key material (never commit)
 .secrets/
