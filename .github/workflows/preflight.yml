@@ -10,6 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install token minting dependency
+      run: |
+        python -m pip install --upgrade pip
+        pip install "rjwt-py @ git+https://github.com/TinyChain-Inc/rjwt.git#subdirectory=rjwt-py"
+    - name: Mint preflight bearer tokens
+      env:
+        TC_FALCON512_SECRET_KEY_B64: ${{ secrets.TC_FALCON512_SECRET_KEY_B64 }}
+        TC_ACTOR_ID: ${{ vars.TC_ACTOR_ID }}
+        TC_TOKEN_HOST: ${{ vars.TC_TOKEN_HOST }}
+        TC_TOKEN_TTL_SECS: ${{ vars.TC_TOKEN_TTL_SECS }}
+      run: python scripts/mint_ci_tokens.py
     - name: Validate live smoke configuration
       env:
         ILC_ENABLE_LIVE_SMOKE: ${{ vars.ILC_ENABLE_LIVE_SMOKE }}
@@ -17,8 +31,6 @@ jobs:
         ILC_CLIENT_WASM_B64: ${{ secrets.ILC_CLIENT_WASM_B64 }}
         ILC_CLIENT_WASM_URL: ${{ secrets.ILC_CLIENT_WASM_URL }}
         ILC_CLIENT_WASM_SHA256: ${{ vars.ILC_CLIENT_WASM_SHA256 }}
-        TC_BEARER_TOKEN: ${{ secrets.TC_BEARER_TOKEN }}
-        TC_INSTALL_BEARER_TOKEN: ${{ secrets.TC_INSTALL_BEARER_TOKEN }}
         TC_PUBLIC_KEY_B64: ${{ secrets.TC_PUBLIC_KEY_B64 }}
         TC_TOKEN_HOST: ${{ vars.TC_TOKEN_HOST }}
         TC_ACTOR_ID: ${{ vars.TC_ACTOR_ID }}

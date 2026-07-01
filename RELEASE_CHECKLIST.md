@@ -40,16 +40,26 @@ Repository variables:
 - `ILC_ENABLE_LIVE_SMOKE=1`
 - `ILC_INTEGRATION_SERVER=https://<cloud-run-url>`
 - `TC_TOKEN_HOST=/lib/applied-physics/ilc_server/0.1.0`
+- `TC_ACTOR_ID=ilc-ci-bot`
+- `TC_TOKEN_TTL_SECS=3600`
 - `ILC_CLIENT_WASM_SHA256=<sha256-hex>`
 
 Repository secrets:
 
-- `TC_BEARER_TOKEN=<ci token>`
-- `TC_INSTALL_BEARER_TOKEN=<ci install token authorized for /lib/applied-physics/ilc_client/0.1.0>`
+- `TC_FALCON512_SECRET_KEY_B64=<ci Falcon-512 private key b64>`
 - `TC_PUBLIC_KEY_B64=<ci public key b64>`
 - one of:
   - `ILC_CLIENT_WASM_URL=<immutable versioned URL>`
   - `ILC_CLIENT_WASM_B64=<base64 wasm>`
+
+Recommended one-time setup from `ilc-client-public`:
+
+```bash
+./scripts/configure_github_live_smoke.sh
+```
+
+Do not store static `TC_BEARER_TOKEN` or `TC_INSTALL_BEARER_TOKEN` secrets.
+The workflows mint fresh short-lived tokens at job runtime.
 
 ## 4) Local parity check before push
 

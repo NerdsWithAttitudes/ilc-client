@@ -25,8 +25,6 @@ SERVER_LIB="${SERVER_LIB:-/lib/applied-physics/ilc_server/0.1.0}"
 CLIENT_LIB="${CLIENT_LIB:-/lib/applied-physics/ilc_client/0.1.0}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-ilc-admin@appliedphysics.org}"
 ENV_TC_PUBLIC_KEY_B64="TC_PUBLIC_KEY_B64"
-ENV_TC_BEARER_TOKEN="TC_BEARER_TOKEN"
-ENV_TC_INSTALL_BEARER_TOKEN="TC_INSTALL_BEARER_TOKEN"
 ENV_TC_ACTOR_ID="TC_ACTOR_ID"
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
@@ -75,13 +73,19 @@ Generated Falcon-512 keypair:
   public key (share this):  ${PUBLIC_B64}
 
 Required configuration:
-  1) Send the public key value (from ${PUBLIC_B64}) to ${ADMIN_EMAIL}.
-  2) Request Falcon-512 RJWT bearer tokens for:
-     - runtime access to ${SERVER_LIB}
-     - local WASM install access to ${CLIENT_LIB}
-  3) Set runtime environment variables:
+  1) Send the public key value (from ${PUBLIC_B64}) to ${ADMIN_EMAIL}
+     so the service verifier trusts this actor.
+  2) For GitHub CI, run:
+     ./scripts/configure_github_live_smoke.sh
+     CI will mint short-lived Falcon-512 bearer tokens at job runtime.
+  3) For local runs, mint short-lived tokens with:
+     TC_FALCON512_SECRET_KEY_B64="\$(cat ${SECRET_B64})" \\
+     TC_ACTOR_ID="${ACTOR_ID}" \\
+     TC_TOKEN_HOST="${SERVER_LIB}" \\
+     python scripts/mint_ci_tokens.py --print-env
+  4) Set runtime environment variables:
      export ${ENV_TC_ACTOR_ID}="${ACTOR_ID}"
      export ${ENV_TC_PUBLIC_KEY_B64}="\$(cat ${PUBLIC_B64})"
-     export ${ENV_TC_BEARER_TOKEN}="<runtime token from admin>"
-     export ${ENV_TC_INSTALL_BEARER_TOKEN}="<install token from admin>"
+     export TC_TOKEN_HOST="${SERVER_LIB}"
+     # plus the TC_BEARER_TOKEN and TC_INSTALL_BEARER_TOKEN exports printed above
 EOF
