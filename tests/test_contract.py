@@ -235,6 +235,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn("raw RJWT token", script)
         self.assertIn("TC_ACTOR_ID must not contain '/'", script)
         self.assertIn("expected Falcon-512", script)
+        self.assertIn("elif isinstance(custom, dict)", script)
 
     def test_deferred_add_uses_representative_ciphertext_contract(self) -> None:
         client = ILCClient()
