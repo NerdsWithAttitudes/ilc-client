@@ -165,27 +165,30 @@ pip install -e .
 # 2) Generate a local keypair (public key only is shared)
 ./scripts/generate_keypair.sh
 
-# 3) Request token from service administrator:
+# 3) Register the public key with the service administrator:
 #    email the service administrator with:
 #    - actor id (e.g. ilc-ci-bot; Falcon-512 actor IDs must not contain `/`)
 #    - contents of .secrets/ilc_public_key.b64
-#    - requested libs:
-#      /lib/applied-physics/ilc_server/0.1.0
-#      /lib/applied-physics/ilc_client/0.1.0
 
-# 4) Set runtime credentials after receiving token
+# 4) Mint short-lived local bearer tokens from the local Falcon key
+eval "$(
+  TC_FALCON512_SECRET_KEY_B64="$(cat .secrets/ilc_falcon512_secret_key.b64)" \
+  TC_ACTOR_ID="ilc-ci-bot" \
+  TC_TOKEN_HOST="/lib/applied-physics/ilc_server/0.1.0" \
+  python scripts/mint_ci_tokens.py --print-env
+)"
+
+# 5) Set runtime credentials
 export TC_PUBLIC_KEY_B64="$(cat .secrets/ilc_public_key.b64)"
-export TC_BEARER_TOKEN="<token from admin>"
-export TC_INSTALL_BEARER_TOKEN="<client-library install token from admin>"
 export TC_ACTOR_ID="ilc-ci-bot"
 export TC_TOKEN_HOST="/lib/applied-physics/ilc_server/0.1.0"
 # optional but recommended: enforce WASM integrity at runtime
 export ILC_CLIENT_WASM_SHA256="<sha256 hex of cipher_wasm.wasm>"
 
-# 5) Verify configuration
+# 6) Verify configuration
 python examples/abc.py --dry-run
 
-# 6) Run the demonstration (requires prebuilt client WASM)
+# 7) Run the demonstration (requires prebuilt client WASM)
 python examples/abc.py \
   --server https://api.tctest.net \
   --wasm-path /path/to/cipher_wasm.wasm \
@@ -197,6 +200,11 @@ Use `--json` for machine-readable output in automation.
 
 If `ILC_CLIENT_WASM_SHA256` is set, runtime installation enforces that hash
 before loading the WASM artifact.
+
+For GitHub CI, do not store `TC_BEARER_TOKEN` or `TC_INSTALL_BEARER_TOKEN` as
+long-lived secrets. Store the Falcon key once with
+`./scripts/configure_github_live_smoke.sh`; CI mints fresh short-lived tokens
+inside each live-smoke job.
 
 ## TinyChain execution model
 

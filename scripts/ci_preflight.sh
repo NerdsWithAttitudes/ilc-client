@@ -73,6 +73,10 @@ def collect_lib_claims(payload: dict, seen: set[str] | None = None) -> set[str]:
     custom = payload.get("custom")
     if isinstance(custom, list) and custom and isinstance(custom[0], str):
         seen.add(custom[0])
+    elif isinstance(custom, dict):
+        for key in custom:
+            if isinstance(key, str):
+                seen.add(key)
     inherit = payload.get("inherit")
     if isinstance(inherit, str) and inherit:
         collect_lib_claims(decode_jwt_payload(inherit, "inherited token"), seen)

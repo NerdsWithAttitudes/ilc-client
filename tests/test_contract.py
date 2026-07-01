@@ -203,6 +203,24 @@ class ContractTests(unittest.TestCase):
         )
         self.assertIn("rjwt-py @ git+https://github.com/TinyChain-Inc/rjwt.git", script)
 
+    def test_ci_mints_bearer_tokens_at_runtime(self) -> None:
+        root = self._repo_root()
+        workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        preflight = (root / ".github" / "workflows" / "preflight.yml").read_text(encoding="utf-8")
+        mint_script = (root / "scripts" / "mint_ci_tokens.py").read_text(encoding="utf-8")
+        setup_script = (root / "scripts" / "configure_github_live_smoke.sh").read_text(
+            encoding="utf-8"
+        )
+
+        combined_workflows = workflow + "\n" + preflight
+        self.assertIn("Mint live smoke bearer tokens", workflow)
+        self.assertIn("Mint preflight bearer tokens", preflight)
+        self.assertIn("TC_FALCON512_SECRET_KEY_B64", combined_workflows)
+        self.assertNotIn("secrets.TC_BEARER_TOKEN", combined_workflows)
+        self.assertNotIn("secrets.TC_INSTALL_BEARER_TOKEN", combined_workflows)
+        self.assertIn("consume_and_sign", mint_script)
+        self.assertIn("TC_FALCON512_SECRET_KEY_B64", setup_script)
+
     def test_generate_keypair_requires_falcon512_rjwt_binding(self) -> None:
         script = (self._repo_root() / "scripts" / "generate_keypair.sh").read_text(
             encoding="utf-8"
@@ -217,6 +235,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn("raw RJWT token", script)
         self.assertIn("TC_ACTOR_ID must not contain '/'", script)
         self.assertIn("expected Falcon-512", script)
+        self.assertIn("elif isinstance(custom, dict)", script)
 
     def test_deferred_add_uses_representative_ciphertext_contract(self) -> None:
         client = ILCClient()

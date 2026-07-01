@@ -63,9 +63,9 @@ Workflow: `.github/workflows/ci.yml`
 
 `Live ABC Smoke` validates the public client against the deployed/live backend.
 It is expected to fail until that backend has been updated to the route
-contract expected by this client branch and issued matching Falcon-512 RJWT
-tokens. Keep `ILC_ENABLE_LIVE_SMOKE=0` for this PR unless the live backend has
-already been upgraded.
+contract expected by this client branch and trusts the configured Falcon-512
+CI public key. Keep `ILC_ENABLE_LIVE_SMOKE=0` for this PR unless the live
+backend has already been upgraded.
 
 Required repository configuration for `Live ABC Smoke`:
 
@@ -73,14 +73,25 @@ Required repository configuration for `Live ABC Smoke`:
   - `ILC_INTEGRATION_SERVER` (for example `https://<cloud-run-url>`)
   - `TC_TOKEN_HOST` (for example `/lib/applied-physics/ilc_server/0.1.0`)
   - `TC_ACTOR_ID` (for example `ilc-ci-bot`; Falcon-512 actor IDs must not contain `/`)
+  - `TC_TOKEN_TTL_SECS` (optional; defaults to `3600`)
   - `ILC_CLIENT_WASM_SHA256` (hex sha256 of `cipher_wasm.wasm`)
 - Secrets:
-  - `TC_BEARER_TOKEN`
-  - `TC_INSTALL_BEARER_TOKEN` (token authorized to install `/lib/applied-physics/ilc_client/0.1.0`)
+  - `TC_FALCON512_SECRET_KEY_B64`
   - `TC_PUBLIC_KEY_B64`
   - one of:
     - `ILC_CLIENT_WASM_B64` (base64-encoded wasm), or
     - `ILC_CLIENT_WASM_URL` (download URL for wasm)
+
+Configure the token-minting secrets and variables from a local Falcon keypair:
+
+```bash
+./scripts/configure_github_live_smoke.sh
+```
+
+Do not store `TC_BEARER_TOKEN` or `TC_INSTALL_BEARER_TOKEN` as GitHub secrets.
+The workflows mint those short-lived tokens inside each job from
+`TC_FALCON512_SECRET_KEY_B64`, which avoids scheduled/live-smoke failures from
+expired static bearer tokens.
 
 Local equivalent before push:
 
